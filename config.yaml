@@ -1,0 +1,37 @@
+# RAM-Guard Configuration
+# Tune these thresholds based on the host system's baseline behaviour.
+
+scan:
+  poll_interval_seconds: 5        # how often the monitor loop runs
+  history_window: 12              # number of samples kept per process (for growth-rate calc)
+
+thresholds:
+  high_memory_percent: 15.0       # flag if a process uses > this % of total RAM
+  leak_growth_mb_per_min: 25.0    # flag if RSS grows faster than this sustained rate
+  min_samples_for_leak_check: 4   # don't judge growth until we have this many samples
+
+notifications:
+  enabled: true
+  cooldown_seconds: 120           # don't re-notify for the same finding within this window
+  mobile_push:
+    enabled: true
+    ntfy_topic: "nitesh-ramguard-k47xq2p9"   # install the ntfy app, subscribe to this exact topic
+                                                  # make it unique/hard-to-guess since ntfy topics are public by name
+  email:
+    enabled: false                  # set true after filling in the fields below
+    smtp_host: "smtp.gmail.com"     # Gmail's SMTP server (works for any Gmail sender)
+    smtp_port: 587
+    sender_email: "your.email@gmail.com"
+    sender_app_password: "PASTE_16_CHAR_APP_PASSWORD_HERE"   # NOT your normal Gmail password — see README
+    recipient_email: "your.email@gmail.com"   # can be the same address; phone will notify on new mail
+
+logging:
+  log_file: "ram_guard.log"
+  level: "INFO"
+  silent_mode: false   # if true, skip desktop/email/mobile notifications entirely —
+                        # still logs everything to file. Use for passive baseline runs
+                        # where you don't want to be interrupted for 24-48h.
+
+known_vulnerability_scan:
+  enabled: true
+  check_interval_seconds: 3600    # known-CVE / class scan runs far less often than live monitoring
