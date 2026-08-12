@@ -9,6 +9,8 @@ thresholds:
   high_memory_percent: 15.0       # flag if a process uses > this % of total RAM
   leak_growth_mb_per_min: 25.0    # flag if RSS grows faster than this sustained rate
   min_samples_for_leak_check: 4   # don't judge growth until we have this many samples
+  excluded_processes: []          # extra process names to never flag, beyond the
+                                   # built-in known-benign OS list (e.g. MemCompression)
 
 notifications:
   enabled: true

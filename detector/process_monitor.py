@@ -105,14 +105,27 @@ COMBINED_THRESHOLDS = [
     (50, "warning"),
 ]
 
+# OS-internal housekeeping processes known to legitimately hold or grow
+# memory in ways that look identical to a leak/high-usage finding, but
+# aren't a process a user or attacker controls. Found via a real 7h
+# baseline run: MemCompression (Windows' compressed memory store) trended
+# upward for sustained stretches as a normal side effect of system memory
+# pressure, passing even the growth-consistency check. Lowercased for
+# case-insensitive matching.
+KNOWN_BENIGN_SYSTEM_PROCESSES = {"memcompression"}
+
 
 class ProcessMemoryMonitor:
     def __init__(self, history_window: int, high_mem_pct: float,
-                 leak_mb_per_min: float, min_samples: int):
+                 leak_mb_per_min: float, min_samples: int,
+                 excluded_processes: List[str] | None = None):
         self.history_window = history_window
         self.high_mem_pct = high_mem_pct
         self.leak_mb_per_min = leak_mb_per_min
         self.min_samples = min_samples
+        self.excluded_processes = KNOWN_BENIGN_SYSTEM_PROCESSES | {
+            p.lower() for p in (excluded_processes or [])
+        }
         self._history: Dict[int, Deque[Tuple[float, float]]] = defaultdict(
             lambda: deque(maxlen=self.history_window)
         )  # pid -> deque[(timestamp, rss_mb)]
@@ -171,6 +184,9 @@ class ProcessMemoryMonitor:
                 rss_mb = info["memory_info"].rss / (1024 * 1024) if info["memory_info"] else 0
                 mem_pct = info["memory_percent"] or 0.0
                 pid, name = info["pid"], info["name"] or "unknown"
+
+                if name.lower() in self.excluded_processes:
+                    continue
 
                 # 1. High single-process memory usage
                 if mem_pct >= self.high_mem_pct:

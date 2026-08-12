@@ -27,6 +27,7 @@ if "monitor" not in st.session_state:
         high_mem_pct=cfg["thresholds"]["high_memory_percent"],
         leak_mb_per_min=cfg["thresholds"]["leak_growth_mb_per_min"],
         min_samples=cfg["thresholds"]["min_samples_for_leak_check"],
+        excluded_processes=cfg["thresholds"].get("excluded_processes", []),
     )
 
 st.title("🛡️ RAM-Guard — RAM Vulnerability Detection & Alerting")
