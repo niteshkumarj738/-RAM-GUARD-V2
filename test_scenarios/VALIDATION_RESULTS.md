@@ -1,8 +1,11 @@
 # RAM-Guard — validation results
 
 These are real, captured results from running RAM-Guard's detectors against
-the controlled test scenarios in `test_scenarios/`, on this machine
-(Linux, ~4 GB RAM), not projected or assumed behaviour.
+the controlled test scenarios in `test_scenarios/`, not projected or assumed
+behaviour. Section 1-4 below are from the original Linux development
+environment (~4 GB RAM); the Windows section further down covers a second,
+separate validation pass on the actual Windows deployment target, including
+a real multi-hour false-positive finding and fix.
 
 ## 1. High-memory detector
 
@@ -71,23 +74,101 @@ matching the two base weights (25 + 35 = 60).
 
 | Detector | Validated | Notes |
 |---|---|---|
-| High memory usage | ✅ | Matches known allocation |
-| Leak-suspect growth | ✅ | Matches known simulated rate |
-| WX page (exploit indicator) | ✅ | Linux-verified |
+| High memory usage | ✅ | Matches known allocation, Linux + Windows |
+| Leak-suspect growth | ✅ | Fixed a real ~489/hour false-positive rate found in a 7h live run; re-validated after fix |
+| WX page (exploit indicator) | ✅ | Linux + Windows (`VirtualQueryEx`); noisy on JIT-using Windows apps by nature, documented |
 | Combined risk escalation | ✅ | Fires alongside individual alerts, not instead of |
+| Desktop notification | ✅ | Confirmed visible on-screen, Windows |
+| Mobile push (ntfy) | ⚠️ | Server-side confirmed working; phone delivery blocked by Android background restrictions (device-side, not a code issue) |
+
+## Windows validation (real deployment target)
+
+Everything below was run live on the actual Windows machine this tool is
+meant to run on, separately from the Linux dev-environment results above.
+
+### 5. High-memory + WX-page detector on Windows
+
+The WX-page (writable+executable memory) check originally only worked on
+Linux; on Windows it silently detected nothing. Implemented a real Windows
+equivalent using `VirtualQueryEx` to walk each flagged process's address
+space for `PAGE_EXECUTE_READWRITE` / `PAGE_EXECUTE_WRITECOPY` regions.
+
+```
+[high_memory_hog] PID=26348 allocating 2571 MB (~16.0% of 16069 MB total RAM)
+Process finding: pid=26348 name=python.exe kind=high_memory
+  detail=16.1% of system RAM (2588 MB)
+```
+**Result: PASS.** Matches the target allocation, same as the Linux result.
+
+WX-page scan, run against real running system processes (not synthetic):
+```
+Process finding: pid=18740 name=Code.exe kind=wx_pages severity=warning
+  detail=Writable+executable memory region at 0x7FF6E0040000 (11272192 bytes)
+Process finding: pid=32132 name=chrome.exe kind=wx_pages severity=warning
+  detail=Writable+executable memory region at 0x7FF8CF4C0000 (92274688 bytes)
+```
+**Result: PASS, with an honest caveat.** The scan correctly finds real WX
+regions — but VS Code, Chrome, and Edge WebView2 all legitimately hold WX
+memory for their JIT compilers (V8/Electron/.NET), so this indicator is
+noisy by nature on Windows once a JIT-using app crosses the memory
+threshold. Documented in the main README rather than hidden; severity was
+set to `warning` (not `critical`) specifically because of this.
+
+### 6. Desktop + mobile notification pipeline
+
+Triggered a real finding end-to-end (not just logged): desktop popup
+confirmed visible on-screen; mobile push via ntfy.sh confirmed reaching the
+server correctly (after fixing a header-encoding bug — em dashes in finding
+titles crashed the request under Latin-1 HTTP header encoding until the
+title was sent as raw UTF-8 bytes). Delivery to the phone's ntfy app itself
+was blocked by Android background-restriction settings, a device-side
+limitation rather than a code defect — email alerts were chosen as the more
+reliable phone-notification channel going forward.
+
+### 7. Leak-suspect false-positive discovery and fix (real 7-hour run)
+
+Ran RAM-Guard in `--silent` (log-only) baseline mode on real, ordinary
+laptop use — not a synthetic scenario — for **7 hours**.
+
+```
+Total findings: 3,444  (~489/hour)
+Findings by type: leak_suspect  3,431   high_memory  12   combined_risk  1
+Top offenders:    chrome.exe 965   OCControl.Service.exe 624
+                   MemCompression 521   msedgewebview2.exe 389   Code.exe 151
+```
+**Result: the leak detector was unusably noisy as originally built.**
+Comparing only the first and last sample in the window let ordinary
+spike-and-release memory behaviour (browsers, the OS memory compressor)
+average out to the same rate as a real leak.
+
+**Fix:** require ~75% of the sample window to be trending upward, not just
+the two endpoints — a real leak grows steadily; ordinary apps don't.
+
+**Re-validation after the fix**, real leak scenario + real system running
+concurrently for 80 seconds:
+```
+Process finding: pid=8488 name=python.exe kind=leak_suspect
+  detail=RSS growing ~36.8 MB/min over 12 samples (32→57 MB), 100% consistently upward
+```
+Chrome, MemCompression, and Edge WebView2 — the three biggest offenders
+above — produced **zero** false positives in the follow-up run. VS Code
+(`Code.exe`) still showed some residual noise, which is reported here
+rather than omitted; further tuning is a reasonable next step, not a
+solved problem.
 
 ## Honest scope of this validation
 
-- Tested on Linux only (matches this development environment). The
-  Windows/macOS code paths for the vulnerability catalogue are
-  logically sound (registry/sysfs reads with graceful fallback) but
-  weren't exercised on real Windows/macOS hardware — that's a fair
-  thing to disclose if asked.
-- These are self-triggered, controlled scenarios, not real-world
-  malware or an actual exploit. They prove the detector logic works
-  against the exact pattern it's designed for — they don't prove
+- Sections 1-4 (Linux) and 5-7 (Windows) were both run for real, on real
+  hardware — not projected or assumed. macOS was not tested; the
+  vulnerability-catalogue code paths for it are logically sound (documented
+  fallback to manual review where no API exists) but unexercised.
+- These are self-triggered, controlled scenarios (plus one real multi-hour
+  passive run), not real-world malware or an actual exploit. They prove the
+  detector logic works against the exact pattern it's designed for, and —
+  for the 7-hour run — against real ordinary usage. They don't prove
   RAM-Guard would catch a sophisticated, evasive real attacker.
 - The known-vulnerability catalogue (Rowhammer, Meltdown, cold boot, DMA)
   wasn't separately validated here since those checks read system state
   rather than react to a triggerable condition — they were exercised
-  during normal scan runs shown earlier in this project.
+  during normal scan runs shown earlier in this project, on both Linux and
+  Windows.
