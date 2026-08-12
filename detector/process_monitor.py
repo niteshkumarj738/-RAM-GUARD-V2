@@ -189,11 +189,28 @@ class ProcessMemoryMonitor:
                     t1, m1 = hist[-1]
                     minutes = max((t1 - t0) / 60.0, 1e-6)
                     growth_rate = (m1 - m0) / minutes
-                    if growth_rate >= self.leak_mb_per_min:
+
+                    # A real leak grows steadily; ordinary apps (browsers,
+                    # IDEs, the OS memory compressor) spike and release
+                    # memory constantly and can hit the same average rate
+                    # comparing only the first and last sample. Require most
+                    # of the window to be trending upward too, not just the
+                    # endpoints. Tuned against a real 7h baseline capture on
+                    # this machine, which showed Chrome/VS Code/MemCompression
+                    # firing ~3400 false positives under the rate check alone.
+                    samples = list(hist)
+                    rising_steps = sum(
+                        1 for (_, a), (_, b) in zip(samples, samples[1:])
+                        if b >= a - 1.0  # 1 MB tolerance for sampling noise
+                    )
+                    consistency = rising_steps / (len(samples) - 1)
+
+                    if growth_rate >= self.leak_mb_per_min and consistency >= 0.75:
                         findings.append(Finding(
                             pid=pid, name=name, kind="leak_suspect",
                             detail=f"RSS growing ~{growth_rate:.1f} MB/min over "
-                                   f"{len(hist)} samples ({m0:.0f}→{m1:.0f} MB)",
+                                   f"{len(hist)} samples ({m0:.0f}→{m1:.0f} MB), "
+                                   f"{consistency:.0%} consistently upward",
                             severity="warning",
                             risk_score=RISK_WEIGHTS["leak_suspect"],
                         ))
