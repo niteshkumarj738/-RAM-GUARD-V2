@@ -1,16 +1,21 @@
 """
 RAM-Guard: RAM Vulnerability Detection & Alerting System
 -----------------------------------------------------------
-Entry point. Runs two complementary detection layers on a schedule:
+Entry point. Runs three complementary detection layers on a schedule:
 
   1. Live process memory monitor  -> catches leaks / abnormal usage /
                                       (best-effort) WX-page exploitation signs
   2. Known vulnerability catalogue -> reports host exposure to documented
                                       RAM-class vulnerabilities (Rowhammer,
                                       Meltdown/Spectre, cold-boot, DMA)
+  3. Crash-signature monitor (Windows) -> catches application-level memory
+                                      corruption (buffer overflow, use-after-
+                                      free, double-free) at the moment it
+                                      actually crashes a process, via Windows'
+                                      own OS-confirmed exception codes
 
-Findings from both layers raise desktop notifications (with cooldown) and
-are logged to file for later review / reporting.
+Findings from all three layers raise desktop notifications (with cooldown)
+and are logged to file for later review / reporting.
 
 Usage:
     python main.py                # run continuous monitoring loop
@@ -27,6 +32,7 @@ import yaml
 
 from detector.process_monitor import ProcessMemoryMonitor
 from detector.known_vulnerabilities import run_catalogue_scan
+from detector.crash_monitor import CrashCorruptionMonitor
 from notifier import Notifier
 
 
@@ -66,6 +72,22 @@ def run_process_scan(monitor: ProcessMemoryMonitor, notifier: Notifier, logger, 
             title=f"{f.kind.replace('_', ' ').title()} — {f.name} (PID {f.pid})",
             message=f.detail,
             key=f"proc:{f.pid}:{f.kind}",
+            severity=f.severity,
+        )
+    return findings
+
+
+def run_crash_scan(monitor: CrashCorruptionMonitor, notifier: Notifier, logger, silent: bool = False):
+    findings = monitor.scan_once()
+    for f in findings:
+        logger.info("Crash finding: pid=%s name=%s kind=%s severity=%s score=%s detail=%s",
+                    f.pid, f.name, f.kind, f.severity, f.risk_score, f.detail)
+        if silent:
+            continue
+        notifier.notify(
+            title=f"Memory Corruption Crash — {f.name} (PID {f.pid})",
+            message=f.detail,
+            key=f"crash:{f.pid}:{f.kind}",
             severity=f.severity,
         )
     return findings
@@ -120,6 +142,12 @@ def main():
         min_samples=cfg["thresholds"]["min_samples_for_leak_check"],
         excluded_processes=cfg["thresholds"].get("excluded_processes", []),
     )
+    crash_cfg = cfg.get("crash_monitor", {})
+    crash_monitor = CrashCorruptionMonitor(
+        lookback_minutes=crash_cfg.get("lookback_minutes", 10),
+    )
+    crash_enabled = crash_cfg.get("enabled", True)
+    crash_interval = crash_cfg.get("check_interval_seconds", 30)
 
     logger.info("RAM-Guard starting up. silent_mode=%s", silent)
     last_catalogue_scan = 0.0
@@ -130,16 +158,22 @@ def main():
         run_process_scan(monitor, notifier, logger, silent=silent)
         if catalogue_enabled:
             run_known_vuln_scan(notifier, logger, silent=silent)
+        if crash_enabled:
+            run_crash_scan(crash_monitor, notifier, logger, silent=silent)
         logger.info("Single scan complete.")
         return
 
     poll_interval = cfg["scan"]["poll_interval_seconds"]
+    last_crash_scan = 0.0
     try:
         while True:
             run_process_scan(monitor, notifier, logger, silent=silent)
             if catalogue_enabled and (time.time() - last_catalogue_scan) >= catalogue_interval:
                 run_known_vuln_scan(notifier, logger, silent=silent)
                 last_catalogue_scan = time.time()
+            if crash_enabled and (time.time() - last_crash_scan) >= crash_interval:
+                run_crash_scan(crash_monitor, notifier, logger, silent=silent)
+                last_crash_scan = time.time()
             time.sleep(poll_interval)
     except KeyboardInterrupt:
         logger.info("RAM-Guard stopped by user.")

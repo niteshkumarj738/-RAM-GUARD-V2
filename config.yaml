@@ -37,3 +37,8 @@ logging:
 known_vulnerability_scan:
   enabled: true
   check_interval_seconds: 3600    # known-CVE / class scan runs far less often than live monitoring
+
+crash_monitor:
+  enabled: true                   # Windows only; silently inert on other platforms
+  check_interval_seconds: 30      # how often to poll the Windows Application Event Log
+  lookback_minutes: 10            # how far back to look for new crash events each check

@@ -35,13 +35,34 @@ Where software cannot conclusively verify exposure (e.g. Rowhammer depends
 on DRAM refresh timing, cold-boot depends on physical access policy), the
 tool flags it explicitly as "review needed" rather than guessing.
 
+**3. Application-level memory corruption crashes, Windows only**
+(`detector/crash_monitor.py`) — watches the Windows Application Event Log
+for process crashes whose exception code is a direct, OS-confirmed
+memory-corruption signature:
+| Exception code | Meaning |
+|---|---|
+| `0xc0000005` | Access violation — often a use-after-free, buffer overflow, or null-deref |
+| `0xc0000374` | Heap corruption, detected by Windows' own heap manager — a strong double-free / heap-overflow signature |
+| `0xc0000409` | Stack buffer overrun — the compiler's `/GS` canary caught a stack overflow |
+
+**Scope boundary, stated plainly:** this does not find buffer overflows,
+use-after-free, or double-free bugs *in source code before they happen* —
+that requires static analysis (Coverity, Clang Static Analyzer) or
+instrumented builds (AddressSanitizer, Valgrind), a different category of
+tool that needs the target program's source or a special build. This
+catches the moment such a bug actually corrupts memory badly enough to
+crash a process, using Windows' own exception system as the authority —
+a black-box, after-the-fact signal, consistent with how the rest of
+RAM-Guard works.
+
 ## Architecture
 
 ```
-main.py            Orchestrator: runs both detection layers on a schedule
+main.py            Orchestrator: runs all detection layers on a schedule
 detector/
   process_monitor.py       Live per-process RAM anomaly detection
   known_vulnerabilities.py Static catalogue + host exposure checks
+  crash_monitor.py         Windows Event Log memory-corruption crash signatures
 notifier.py         Cross-platform desktop popup + instant mobile push via ntfy.sh (with cooldown)
 dashboard.py         Streamlit dashboard for live visualization
 config.yaml          All thresholds / intervals in one place

@@ -80,6 +80,7 @@ matching the two base weights (25 + 35 = 60).
 | Combined risk escalation | ✅ | Fires alongside individual alerts, not instead of |
 | Desktop notification | ✅ | Confirmed visible on-screen, Windows |
 | Mobile push (ntfy) | ⚠️ | Server-side confirmed working; phone delivery blocked by Android background restrictions (device-side, not a code issue) |
+| Memory-corruption crash signatures (Windows) | ✅ | Validated against 6 real historical crashes on this machine; correctly excluded 191 unrelated .NET exceptions |
 
 ## Windows validation (real deployment target)
 
@@ -155,6 +156,39 @@ above — produced **zero** false positives in the follow-up run. VS Code
 (`Code.exe`) still showed some residual noise, which is reported here
 rather than omitted; further tuning is a reasonable next step, not a
 solved problem.
+
+### 8. Memory-corruption crash-signature detector (Windows)
+
+Rather than a synthetic trigger, this was validated against **real crash
+history already present on this machine's Windows Application Event Log**
+— a stronger form of evidence than a self-triggered demo, since these
+crashes happened naturally, independent of anything built for this project.
+
+A survey of the last 200 "Application Error" (Event ID 1000) events on this
+machine found 2 real access violations and 4 real stack buffer overruns
+among them (191 others were unrelated .NET managed exceptions, correctly
+excluded — see below).
+
+```
+Found 6 memory-corruption-class crash findings:
+  pid=9444  name=RtkAudUService64.exe   exception=0xc0000005 (access violation)
+  pid=3452  name=NVDisplay.Container.exe exception=0xc0000409 (stack buffer overrun)
+  pid=17956 name=mc-wns-client.exe      exception=0xc0000409 (stack buffer overrun)
+  pid=7472  name=explorer.exe           exception=0xc0000005 (access violation)
+  pid=25820 name=mc-wns-client.exe      exception=0xc0000409 (stack buffer overrun)
+  pid=5792  name=mc-wns-client.exe      exception=0xc0000409 (stack buffer overrun)
+```
+
+**Result: PASS.** All 6 real corruption-class crashes were correctly
+identified with the right process name, PID, and exception meaning.
+
+**Negative-case check, equally important:** the same machine's crash
+history also includes 191 events with exception code `0xe0434352` (a .NET
+CLR managed exception — not a memory-safety bug in the C/C++ sense). The
+detector correctly excluded all of them, since only specific memory-
+corruption exception codes are treated as findings. This matters as much
+as the positive result: a detector that flagged every crash indiscriminately
+would be as useless as the pre-fix leak detector was.
 
 ## Honest scope of this validation
 
