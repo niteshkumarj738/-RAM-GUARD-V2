@@ -6,3 +6,4 @@ demo_config.yaml
 *_out.txt
 .streamlit/
 security_console.html
+.catalogue_status.json

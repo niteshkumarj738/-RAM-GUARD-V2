@@ -191,7 +191,7 @@
           <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#2BFFA0" stroke-width="14" stroke-dasharray="47 141" stroke-linecap="round" opacity=".85"/>
           <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#FFD166" stroke-width="14" stroke-dasharray="47 141" stroke-dashoffset="-47" opacity=".85"/>
           <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#FF9D3D" stroke-width="14" stroke-dasharray="47 141" stroke-dashoffset="-94" opacity=".85"/>
-          <line id="needle" x1="75" y1="80" x2="42" y2="34" stroke="#E8F3FA" stroke-width="3" stroke-linecap="round"/>
+          <line id="needle" x1="75" y1="80" x2="42" y2="34" stroke="#E8F3FA" stroke-width="3" stroke-linecap="round" style="transform-origin:75px 80px; transition:transform .9s cubic-bezier(.34,1.56,.64,1);"/>
           <circle cx="75" cy="80" r="4.5" fill="#E8F3FA"/>
         </svg>
         <div class="gauge-val" id="gaugeVal">0</div>
@@ -343,19 +343,35 @@ function renderDeviceStrip(){
   });
 }
 
+// Odometer-style rolling counter: animates an element's displayed number
+// from its current value to a new one, instead of snapping instantly.
+function animateNumber(el, to, duration = 800, format = String){
+  const from = parseInt(el.textContent, 10) || 0;
+  if (from === to){ el.textContent = format(to); return; }
+  const start = performance.now();
+  function tick(now){
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    el.textContent = format(Math.round(from + (to - from) * eased));
+    if (t < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
 function renderGauge(){
   const rel = getFilteredFindings();
   const score = rel.length ? Math.max(...rel.map(f => f.score)) : 0;
   const sev = severityFromScore(score);
-  document.getElementById('gaugeVal').textContent = score;
-  document.getElementById('gaugeVal').style.color = SEV_COLOR[sev];
+  const gaugeValEl = document.getElementById('gaugeVal');
+  animateNumber(gaugeValEl, score);
+  gaugeValEl.style.color = SEV_COLOR[sev];
   document.getElementById('gaugeLabel').textContent = sev;
   document.getElementById('gaugeLabel').style.background = SEV_COLOR[sev];
   document.getElementById('gaugeScope').textContent = state.deviceFilter
     ? RAM_GUARD_DATA.devices.find(d => d.id === state.deviceFilter).name : 'ALL DEVICES';
   const angle = -95 + (score / 100) * 190;
   document.getElementById('needle').setAttribute('transform', `rotate(${angle} 75 80)`);
-  document.getElementById('activeCount').textContent = String(rel.length).padStart(2,'0');
+  animateNumber(document.getElementById('activeCount'), rel.length, 600, v => String(v).padStart(2,'0'));
 }
 
 function renderTopOffenders(){

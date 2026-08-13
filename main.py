@@ -23,6 +23,7 @@ Usage:
 """
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -39,6 +40,26 @@ from notifier import Notifier
 def load_config(path: str = "config.yaml") -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
+
+
+def load_catalogue_status(path: Path) -> dict:
+    """Persists which vuln IDs were already exposed, across process
+    restarts and separate --once invocations, so a static/unchanging
+    exposure status (e.g. Rowhammer, which is always exposed=True by
+    design) doesn't re-notify every time the tool is run."""
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_catalogue_status(path: Path, status: dict):
+    try:
+        path.write_text(json.dumps(status), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def setup_logging(cfg: dict):
@@ -93,15 +114,26 @@ def run_crash_scan(monitor: CrashCorruptionMonitor, notifier: Notifier, logger, 
     return findings
 
 
-def run_known_vuln_scan(notifier: Notifier, logger, silent: bool = False):
+def run_known_vuln_scan(notifier: Notifier, logger, silent: bool = False, last_status: dict = None):
+    """Runs the catalogue check every cycle (so the log/dashboard always
+    reflect current status), but only raises a notification when a vuln's
+    exposure status actually CHANGES -- otherwise a static, unchanging
+    "review needed" for something like Rowhammer (which can never be
+    software-verified, so it's always exposed=True by design) would
+    re-notify every single scan interval forever, which is exactly the
+    kind of alert-fatigue noise a real detector shouldn't produce."""
+    if last_status is None:
+        last_status = {}
     results = run_catalogue_scan()
     for vc, res in results:
         status = "EXPOSED / REVIEW NEEDED" if res.exposed else "MITIGATED / NOT AFFECTED"
         logger.info("Catalogue check: %s (%s) -> %s | %s",
                     vc.name, vc.vuln_id, status, res.detail)
+        changed = last_status.get(vc.vuln_id) != res.exposed
+        last_status[vc.vuln_id] = res.exposed
         if silent:
             continue
-        if res.exposed:
+        if res.exposed and changed:
             notifier.notify(
                 title=f"{vc.name} ({vc.vuln_id})",
                 message=f"{status}: {res.detail}",
@@ -153,11 +185,14 @@ def main():
     last_catalogue_scan = 0.0
     catalogue_interval = cfg["known_vulnerability_scan"]["check_interval_seconds"]
     catalogue_enabled = cfg["known_vulnerability_scan"]["enabled"]
+    status_path = Path(__file__).parent / ".catalogue_status.json"
+    catalogue_status = load_catalogue_status(status_path)
 
     if args.once:
         run_process_scan(monitor, notifier, logger, silent=silent)
         if catalogue_enabled:
-            run_known_vuln_scan(notifier, logger, silent=silent)
+            run_known_vuln_scan(notifier, logger, silent=silent, last_status=catalogue_status)
+            save_catalogue_status(status_path, catalogue_status)
         if crash_enabled:
             run_crash_scan(crash_monitor, notifier, logger, silent=silent)
         logger.info("Single scan complete.")
@@ -169,7 +204,8 @@ def main():
         while True:
             run_process_scan(monitor, notifier, logger, silent=silent)
             if catalogue_enabled and (time.time() - last_catalogue_scan) >= catalogue_interval:
-                run_known_vuln_scan(notifier, logger, silent=silent)
+                run_known_vuln_scan(notifier, logger, silent=silent, last_status=catalogue_status)
+                save_catalogue_status(status_path, catalogue_status)
                 last_catalogue_scan = time.time()
             if crash_enabled and (time.time() - last_crash_scan) >= crash_interval:
                 run_crash_scan(crash_monitor, notifier, logger, silent=silent)
