@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RAM-Guard — Device Security Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#050A14; --panel:#0B1524; --panel-hi:#101F35; --grid:#123049;
+    --cyan:#2BE0F0; --amber:#FF9D3D; --crimson:#FF3B5C; --verdant:#2BFFA0;
+    --text:#E8F3FA; --muted:#5E7C93;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--void); color:var(--text); font-family:'JetBrains Mono', monospace; min-height:100vh; position:relative; overflow-x:hidden;}
+  #globeCanvas{position:fixed; top:0; left:0; width:100%; height:100%; z-index:0; opacity:.38; pointer-events:none;}
+  .veil{position:fixed; inset:0; z-index:0; pointer-events:none;
+    background:
+      radial-gradient(ellipse 900px 500px at 50% -6%, rgba(43,224,240,.10), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 10%, rgba(255,157,61,.05), transparent 55%),
+      linear-gradient(180deg, rgba(5,10,20,.2), rgba(5,10,20,.6) 30%, var(--void) 70%);
+  }
+  .circuit-bg{position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.28;}
+  .wrap{position:relative; z-index:2; max-width:1180px; margin:0 auto; padding:30px 32px 40px;}
+
+  button{font-family:inherit; cursor:pointer;}
+
+  /* ---------- HERO ---------- */
+  .hero{display:flex; align-items:center; gap:34px; padding:26px 8px 32px; border-bottom:1px solid var(--grid); margin-bottom:22px;}
+  .emblem-stage{position:relative; width:130px; height:130px; flex:none;}
+  .emblem-ring{position:absolute; inset:0; border-radius:50%; border:1px solid rgba(43,224,240,.2); animation:spin 30s linear infinite;}
+  .emblem-ring.rev{inset:-12px; border-style:dashed; animation:spin 42s linear infinite reverse; border-color:rgba(43,224,240,.12);}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .emblem-pulse{position:absolute; inset:16px; border-radius:50%; border:1.5px solid var(--cyan); opacity:0; animation:pulseOut 2.8s cubic-bezier(.2,.7,.3,1) infinite;}
+  @keyframes pulseOut{0%{inset:30px; opacity:.6;}100%{inset:-8px; opacity:0;}}
+  .shield-svg{position:relative; z-index:2; filter:drop-shadow(0 0 18px rgba(43,224,240,.4));}
+  .hero-text h1{font-family:'Orbitron',sans-serif; font-weight:900; font-size:27px; letter-spacing:.04em; margin:0 0 6px; color:#fff; text-shadow:0 0 22px rgba(43,224,240,.4);}
+  .eyebrow{font-size:11px; letter-spacing:.3em; color:var(--cyan); text-transform:uppercase; margin-bottom:10px; display:flex; align-items:center; gap:8px;}
+  .dot-live{width:7px; height:7px; border-radius:50%; background:var(--verdant); box-shadow:0 0 8px 2px var(--verdant); animation:blink 1.6s ease-in-out infinite;}
+  @keyframes blink{0%,100%{opacity:1;}50%{opacity:.35;}}
+  .hero-text p{font-size:12px; color:var(--muted); margin:0; max-width:520px; line-height:1.6;}
+
+  /* ---------- DEVICE STRIP ---------- */
+  .surface{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px;}
+  .device-card{
+    background:linear-gradient(180deg, var(--panel-hi), var(--panel)); border:1px solid var(--grid); border-radius:4px;
+    padding:15px; text-align:center; position:relative; overflow:hidden; transition:border-color .2s, transform .2s;
+  }
+  .device-card:hover{border-color:var(--cyan); transform:translateY(-2px);}
+  .device-card.active{border-color:var(--cyan); box-shadow:0 0 0 1px var(--cyan), 0 0 18px rgba(43,224,240,.25);}
+  .device-card::after{content:""; position:absolute; left:0; right:0; bottom:0; height:2px; background:linear-gradient(90deg, transparent, var(--cyan), transparent); opacity:.5;}
+  .device-card svg{margin-bottom:6px;}
+  .device-card .dname{font-size:10.5px; letter-spacing:.06em; color:var(--text); font-weight:600;}
+  .device-card .dscore{font-family:'Orbitron',sans-serif; font-size:20px; font-weight:700; margin-top:6px;}
+  .device-card .dstatus{display:inline-block; margin-top:6px; font-size:9px; letter-spacing:.08em; font-weight:700; padding:2px 9px; border-radius:2px; color:var(--void);}
+
+  /* ---------- PANELS ---------- */
+  .grid{position:relative; z-index:2; display:grid; grid-template-columns:1.05fr 1.3fr 1.5fr; gap:18px; margin-bottom:18px;}
+  .panel{
+    background:linear-gradient(180deg, rgba(16,31,53,.92), rgba(11,21,36,.94)); backdrop-filter:blur(6px);
+    border:1px solid var(--grid); border-radius:4px; padding:18px 20px; position:relative; box-shadow:0 12px 28px -18px rgba(0,0,0,.8);
+  }
+  .panel::before{content:""; position:absolute; top:0; left:14px; right:14px; height:1px; background:linear-gradient(90deg, transparent, var(--cyan), transparent); opacity:.6;}
+  .panel h2{font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 16px 0; font-weight:700;}
+  .panel h2 .tag{color:var(--cyan);}
+  .panel h2 .clear-filter{float:right; font-size:9.5px; color:var(--cyan); letter-spacing:.05em; cursor:pointer; text-transform:none; font-weight:600; opacity:.85;}
+  .panel h2 .clear-filter:hover{text-decoration:underline;}
+
+  .gauge-wrap{display:flex; flex-direction:column; align-items:center;}
+  .gauge-val{font-family:'Orbitron',sans-serif; font-size:42px; font-weight:900; margin-top:-10px; line-height:1;}
+  .gauge-sub{font-size:10px; color:var(--muted); letter-spacing:.12em; margin-top:2px;}
+  .gauge-label{margin-top:10px; font-size:11px; font-weight:700; letter-spacing:.12em; color:var(--void); padding:4px 16px; border-radius:2px;}
+
+  .health-rows{display:flex; flex-direction:column; gap:12px;}
+  .health-row{display:flex; justify-content:space-between; align-items:baseline; border-bottom:1px dashed var(--grid); padding-bottom:9px;}
+  .health-row:last-child{border:none; padding-bottom:0;}
+  .health-row .label{font-size:10.5px; color:var(--muted); letter-spacing:.06em;}
+  .health-row .val{font-family:'Orbitron',sans-serif; font-size:18px; font-weight:700; color:var(--cyan);}
+
+  .bars{display:flex; flex-direction:column; gap:10px;}
+  .bar-row{display:grid; grid-template-columns:108px 1fr 26px; align-items:center; gap:9px;}
+  .bar-row .pname{font-size:11px; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .bar-track{background:#0A1626; border:1px solid var(--grid); border-radius:2px; height:11px; overflow:hidden;}
+  .bar-fill{height:100%; transition:width .8s cubic-bezier(.2,.8,.2,1);}
+  .bar-row .count{font-size:10.5px; color:var(--muted); text-align:right;}
+
+  .filters{display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;}
+  .filter-btn{
+    background:transparent; border:1px solid var(--grid); color:var(--muted); font-size:9.5px; letter-spacing:.06em;
+    padding:4px 10px; border-radius:2px; transition:all .15s;
+  }
+  .filter-btn:hover{border-color:var(--cyan); color:var(--cyan);}
+  .filter-btn.active{background:var(--cyan); color:var(--void); border-color:var(--cyan); font-weight:700;}
+
+  .footer-row{position:relative; z-index:2; display:grid; grid-template-columns:1.5fr 1fr; gap:18px;}
+  table{width:100%; border-collapse:collapse; font-size:11px;}
+  th{background:rgba(43,224,240,.08); color:var(--cyan); text-align:left; padding:8px 9px; font-weight:600; font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; border-bottom:1px solid var(--grid);}
+  td{padding:8px 9px; border-bottom:1px solid var(--grid); color:var(--text);}
+  tbody tr{cursor:pointer; transition:background .12s;}
+  tbody tr:hover td{background:rgba(43,224,240,.07);}
+  .sev-pill{padding:3px 9px; border-radius:2px; font-size:9.5px; font-weight:700; letter-spacing:.04em; color:var(--void); display:inline-block;}
+  .sev-CLEAR{background:var(--verdant);} .sev-LOW{background:#FFD166;} .sev-WARNING{background:var(--amber);} .sev-CRITICAL{background:var(--crimson);}
+  .empty-row td{text-align:center; color:var(--muted); padding:22px 0; font-size:11px;}
+
+  .trend-svg{width:100%; height:120px; display:block;}
+  .legend{display:flex; gap:16px; font-size:10px; color:var(--muted); margin-top:8px;}
+  .legend .k1{color:var(--crimson);} .legend .k2{color:var(--muted);}
+
+  .note{position:relative; z-index:2; margin-top:20px; font-size:10px; color:var(--muted); text-align:center; letter-spacing:.06em;}
+
+  /* ---------- INDIVIDUAL TEST VIEW ---------- */
+  #testView{display:none;}
+  .back-btn{
+    background:transparent; border:1px solid var(--grid); color:var(--cyan); font-size:10.5px; letter-spacing:.08em;
+    padding:6px 14px; border-radius:2px; margin-bottom:20px;
+  }
+  .back-btn:hover{border-color:var(--cyan); background:rgba(43,224,240,.08);}
+  .scan-stage{position:relative; height:360px; display:flex; align-items:center; justify-content:center; margin-bottom:6px;}
+  .ring{position:absolute; border-radius:50%; border:1px solid rgba(43,224,240,.22);}
+  .ring.r1{width:130px; height:130px;} .ring.r2{width:200px; height:200px; border-style:dashed;}
+  .ring.r3{width:270px; height:270px;} .ring.spin{animation:spin 40s linear infinite;} .ring.spin-rev{animation:spin 55s linear infinite reverse;}
+  .pulse-ring{position:absolute; width:130px; height:130px; border-radius:50%; border:1.5px solid var(--amber); opacity:0; animation:pOut 2.6s cubic-bezier(.2,.7,.3,1) infinite;}
+  .pulse-ring.d2{animation-delay:.9s;} .pulse-ring.d3{animation-delay:1.8s;}
+  @keyframes pOut{0%{width:130px; height:130px; opacity:.7;}100%{width:360px; height:360px; opacity:0;}}
+  .node-dot{position:absolute; width:6px; height:6px; border-radius:50%; background:var(--cyan); box-shadow:0 0 8px var(--cyan); animation:blink 1.8s ease-in-out infinite;}
+  .lock-core{position:relative; z-index:3; display:flex; flex-direction:column; align-items:center;}
+  .lock-glow{position:absolute; width:140px; height:140px; border-radius:50%; background:radial-gradient(circle, rgba(255,157,61,.35), transparent 70%); filter:blur(4px); animation:corePulse 2.2s ease-in-out infinite;}
+  @keyframes corePulse{0%,100%{opacity:.6; transform:scale(1);}50%{opacity:1; transform:scale(1.1);}}
+  svg.lock-icon{position:relative; z-index:2; filter:drop-shadow(0 0 16px rgba(255,157,61,.65));}
+  .scan-caption{text-align:center; margin-top:-4px; font-size:10.5px; letter-spacing:.16em; color:var(--muted);}
+  .scan-caption b{color:var(--amber); font-family:'Orbitron',sans-serif;}
+  .test-grid{display:grid; grid-template-columns:1.2fr 1fr; gap:18px; margin-top:22px;}
+  .kv-rows{display:flex; flex-direction:column; gap:10px;}
+  .kv-row{display:flex; justify-content:space-between; border-bottom:1px dashed var(--grid); padding-bottom:8px;}
+  .kv-row:last-child{border:none; padding-bottom:0;}
+  .kv-row .k{font-size:10.5px; color:var(--muted); letter-spacing:.05em;}
+  .kv-row .v{font-size:12px; color:var(--text); font-weight:600;}
+  .verdict-pill{padding:3px 11px; border-radius:2px; font-size:10px; font-weight:700; letter-spacing:.05em; color:var(--void);}
+  .log{font-size:11px; line-height:1.85; color:var(--cyan);}
+  .log .ok{color:var(--verdant);} .log .warn{color:var(--amber);} .log .muted{color:var(--muted);}
+  .log div{opacity:0; animation:typeIn .3s ease forwards;}
+  @keyframes typeIn{from{opacity:0; transform:translateX(-4px);}to{opacity:1; transform:translateX(0);}}
+  .cursor{display:inline-block; width:7px; height:11px; background:var(--cyan); margin-left:4px; animation:blink 1s step-end infinite; vertical-align:-1px;}
+
+  @media (max-width: 900px){ .grid, .footer-row, .surface, .test-grid{grid-template-columns:1fr;} .hero{flex-direction:column; text-align:center;} }
+  @media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important;} }
+</style>
+</head>
+<body>
+
+<canvas id="globeCanvas"></canvas>
+<div class="veil"></div>
+<svg class="circuit-bg" xmlns="http://www.w3.org/2000/svg">
+  <defs><pattern id="gridpat" width="46" height="46" patternUnits="userSpaceOnUse"><path d="M 46 0 L 0 0 0 46" fill="none" stroke="#123049" stroke-width="1"/></pattern></defs>
+  <rect width="100%" height="100%" fill="url(#gridpat)"/>
+</svg>
+
+<div class="wrap">
+
+  <!-- ===================== CONSOLE VIEW ===================== -->
+  <div id="consoleView">
+    <div class="hero">
+      <div class="emblem-stage">
+        <div class="emblem-ring rev"></div><div class="emblem-ring"></div><div class="emblem-pulse"></div>
+        <svg class="shield-svg" width="130" height="130" viewBox="0 0 150 150">
+          <defs><linearGradient id="shieldMetal" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#E8F3FA"/><stop offset="45%" stop-color="#8FA9C0"/><stop offset="100%" stop-color="#3E5871"/>
+          </linearGradient></defs>
+          <path d="M75 14 L128 32 L128 74 C128 108 106 130 75 140 C44 130 22 108 22 74 L22 32 Z" fill="#0B1524" stroke="url(#shieldMetal)" stroke-width="3.5"/>
+          <path d="M75 24 L119 39 L119 74 C119 102 101 121 75 130 C49 121 31 102 31 74 L31 39 Z" fill="none" stroke="rgba(43,224,240,.25)" stroke-width="1"/>
+          <rect x="58" y="70" width="34" height="30" rx="4" fill="#0B1524" stroke="var(--cyan)" stroke-width="2.5"/>
+          <path d="M64 70 L64 58 A11 11 0 0 1 86 58 L86 70" fill="none" stroke="var(--cyan)" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="75" cy="83" r="4" fill="var(--cyan)"/><rect x="73" y="85" width="4" height="9" rx="1.5" fill="var(--cyan)"/>
+        </svg>
+      </div>
+      <div class="hero-text">
+        <div class="eyebrow"><span class="dot-live"></span>DEVICE SECURITY CONSOLE &nbsp;&middot;&nbsp; RAM-GUARD</div>
+        <h1>MASTERING MEMORY SECURITY</h1>
+        <p>__HOST_NAME__ &mdash; live findings from ram_guard.log, generated __GENERATED_AT__. Click a finding to open its individual test scan.</p>
+      </div>
+    </div>
+
+    <div class="surface" id="deviceStrip"></div>
+
+    <div class="grid">
+      <div class="panel gauge-wrap">
+        <h2 style="align-self:flex-start;">Risk <span class="tag">Score</span> <span id="gaugeScope" style="float:right; font-size:9px; color:var(--muted); text-transform:none;"></span></h2>
+        <svg width="150" height="90" viewBox="0 0 150 90">
+          <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#0F2338" stroke-width="14" stroke-linecap="round"/>
+          <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#2BFFA0" stroke-width="14" stroke-dasharray="47 141" stroke-linecap="round" opacity=".85"/>
+          <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#FFD166" stroke-width="14" stroke-dasharray="47 141" stroke-dashoffset="-47" opacity=".85"/>
+          <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#FF9D3D" stroke-width="14" stroke-dasharray="47 141" stroke-dashoffset="-94" opacity=".85"/>
+          <line id="needle" x1="75" y1="80" x2="42" y2="34" stroke="#E8F3FA" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="75" cy="80" r="4.5" fill="#E8F3FA"/>
+        </svg>
+        <div class="gauge-val" id="gaugeVal">0</div>
+        <div class="gauge-sub">/ 100</div>
+        <div class="gauge-label" id="gaugeLabel">CLEAR</div>
+      </div>
+
+      <div class="panel">
+        <h2>System <span class="tag">Health</span></h2>
+        <div class="health-rows">
+          <div class="health-row"><span class="label">TOTAL RAM</span><span class="val">__TOTAL_RAM__ GB</span></div>
+          <div class="health-row"><span class="label">RAM USED</span><span class="val">__RAM_USED_PCT__%</span></div>
+          <div class="health-row"><span class="label">UPTIME</span><span class="val">__UPTIME_HOURS__H</span></div>
+          <div class="health-row"><span class="label">ACTIVE FINDINGS</span><span class="val" id="activeCount">0</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Top <span class="tag">Offenders</span></h2>
+        <div class="bars" id="topOffenders"></div>
+      </div>
+    </div>
+
+    <div class="footer-row">
+      <div class="panel">
+        <h2>Findings <span class="tag">Log</span> <span class="clear-filter" id="clearFilter">clear filter &times;</span></h2>
+        <div class="filters" id="sevFilters"></div>
+        <table>
+          <thead><tr><th>Time</th><th>Device</th><th>Process</th><th>Category</th><th>Score</th><th>Severity</th></tr></thead>
+          <tbody id="findingsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Memory <span class="tag">Trend</span></h2>
+        <svg class="trend-svg" viewBox="0 0 400 120" preserveAspectRatio="none">
+          <line x1="0" y1="30" x2="400" y2="30" stroke="#123049"/><line x1="0" y1="60" x2="400" y2="60" stroke="#123049"/><line x1="0" y1="90" x2="400" y2="90" stroke="#123049"/>
+          <polyline id="trendA" fill="none" stroke="var(--crimson)" stroke-width="2.5" filter="drop-shadow(0 0 4px rgba(255,59,92,.6))"/>
+          <polyline id="trendB" fill="none" stroke="var(--cyan)" stroke-width="1.6" stroke-dasharray="4 3" opacity=".7"/>
+        </svg>
+        <div class="legend"><span class="k1">&mdash; peak risk score per period</span><span class="k2">- - average risk score per period</span></div>
+      </div>
+    </div>
+
+    <div class="note">LIVE DATA FROM ram_guard.log &middot; GENERATED __GENERATED_AT__ &middot; RE-RUN generate_security_console.py FOR A FRESH SNAPSHOT</div>
+  </div>
+
+  <!-- ===================== INDIVIDUAL TEST VIEW ===================== -->
+  <div id="testView">
+    <button class="back-btn" id="backBtn">&larr; BACK TO THREAT CONSOLE</button>
+    <div class="hero-text" style="margin-bottom:10px;">
+      <div class="eyebrow"><span class="dot-live" style="background:var(--amber); box-shadow:0 0 8px 2px var(--amber);"></span>INDIVIDUAL TEST &nbsp;&middot;&nbsp; DEEP SCAN</div>
+      <h1 id="testTitle">PROCESS TEST</h1>
+    </div>
+
+    <div class="scan-stage">
+      <div class="ring r3 spin-rev"></div><div class="ring r2 spin"></div><div class="ring r1"></div>
+      <div class="pulse-ring"></div><div class="pulse-ring d2"></div><div class="pulse-ring d3"></div>
+      <div class="node-dot" style="top:20%; left:28%;"></div>
+      <div class="node-dot" style="top:15%; left:68%; animation-delay:.4s;"></div>
+      <div class="node-dot" style="top:75%; left:24%; animation-delay:.8s;"></div>
+      <div class="node-dot" style="top:80%; left:70%; animation-delay:1.2s;"></div>
+      <div class="lock-core">
+        <div class="lock-glow"></div>
+        <svg class="lock-icon" width="78" height="78" viewBox="0 0 100 100">
+          <rect x="26" y="46" width="48" height="42" rx="6" fill="#1a0f06" stroke="#FF9D3D" stroke-width="3"/>
+          <path d="M 34 46 L 34 32 A 16 16 0 0 1 66 32 L 66 46" fill="none" stroke="#FF9D3D" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="50" cy="63" r="6" fill="#FF9D3D"/><rect x="47" y="66" width="6" height="14" rx="2" fill="#FF9D3D"/>
+        </svg>
+      </div>
+    </div>
+    <div class="scan-caption">ANALYZING MEMORY REGIONS &nbsp;&middot;&nbsp; <b id="scanPct">73%</b> COMPLETE</div>
+
+    <div class="test-grid">
+      <div class="panel">
+        <h2>Test <span class="tag">Parameters</span></h2>
+        <div class="kv-rows" id="testParams"></div>
+      </div>
+      <div class="panel">
+        <h2>Scan <span class="tag">Log</span></h2>
+        <div class="log" id="scanLog"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   DATA MODEL — populated from real ram_guard.log + live system
+   stats by generate_security_console.py. Not example data.
+   ============================================================ */
+window.RAM_GUARD_DATA = __RAM_GUARD_DATA_JSON__;
+
+const SEV_COLOR = { CLEAR:'var(--verdant)', LOW:'#FFD166', WARNING:'var(--amber)', CRITICAL:'var(--crimson)' };
+const SEV_ORDER = ['CRITICAL','WARNING','LOW','CLEAR'];
+
+const state = { deviceFilter:null, sevFilter:null };
+
+function severityFromScore(score){
+  if (score >= 80) return 'CRITICAL';
+  if (score >= 60) return 'WARNING';
+  if (score >= 30) return 'LOW';
+  return 'CLEAR';
+}
+
+function deviceIcon(type){
+  const icons = {
+    desktop: '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>',
+    laptop:  '<rect x="2" y="4" width="20" height="13" rx="1.5"/><path d="M1 20h22"/>',
+    mobile:  '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
+    iot:     '<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/>',
+  };
+  return `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#2BE0F0" stroke-width="1.6">${icons[type]||icons.desktop}</svg>`;
+}
+
+function getFilteredFindings(){
+  return RAM_GUARD_DATA.findings.filter(f =>
+    (!state.deviceFilter || f.device === state.deviceFilter) &&
+    (!state.sevFilter || f.severity === state.sevFilter)
+  );
+}
+
+function deviceRisk(deviceId){
+  const rel = RAM_GUARD_DATA.findings.filter(f => f.device === deviceId);
+  if (!rel.length) return 0;
+  return Math.max(...rel.map(f => f.score));
+}
+
+function renderDeviceStrip(){
+  const el = document.getElementById('deviceStrip');
+  el.innerHTML = RAM_GUARD_DATA.devices.map(d => {
+    const score = deviceRisk(d.id);
+    const sev = severityFromScore(score);
+    const active = state.deviceFilter === d.id ? 'active' : '';
+    return `<div class="device-card ${active}" data-device="${d.id}">
+      ${deviceIcon(d.type)}
+      <div class="dname">${d.name}</div>
+      <div class="dscore" style="color:${SEV_COLOR[sev]}">${score}</div>
+      <span class="dstatus" style="background:${SEV_COLOR[sev]}">${sev}</span>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.device-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const id = card.dataset.device;
+      state.deviceFilter = state.deviceFilter === id ? null : id;
+      renderAll();
+    });
+  });
+}
+
+function renderGauge(){
+  const rel = getFilteredFindings();
+  const score = rel.length ? Math.max(...rel.map(f => f.score)) : 0;
+  const sev = severityFromScore(score);
+  document.getElementById('gaugeVal').textContent = score;
+  document.getElementById('gaugeVal').style.color = SEV_COLOR[sev];
+  document.getElementById('gaugeLabel').textContent = sev;
+  document.getElementById('gaugeLabel').style.background = SEV_COLOR[sev];
+  document.getElementById('gaugeScope').textContent = state.deviceFilter
+    ? RAM_GUARD_DATA.devices.find(d => d.id === state.deviceFilter).name : 'ALL DEVICES';
+  const angle = -95 + (score / 100) * 190;
+  document.getElementById('needle').setAttribute('transform', `rotate(${angle} 75 80)`);
+  document.getElementById('activeCount').textContent = String(rel.length).padStart(2,'0');
+}
+
+function renderTopOffenders(){
+  const rel = getFilteredFindings();
+  const counts = {};
+  rel.forEach(f => { counts[f.process] = (counts[f.process]||0) + 1; });
+  const rows = Object.entries(counts).sort((a,b) => b[1]-a[1]).slice(0,5);
+  const max = rows.length ? rows[0][1] : 1;
+  const el = document.getElementById('topOffenders');
+  if (!rows.length){ el.innerHTML = '<div style="font-size:11px;color:var(--muted);">No findings for this filter.</div>'; return; }
+  el.innerHTML = rows.map(([proc,count]) => {
+    const pct = Math.round((count/max)*100);
+    const worst = Math.max(...rel.filter(f=>f.process===proc).map(f=>f.score));
+    const sev = severityFromScore(worst);
+    return `<div class="bar-row"><div class="pname">${proc}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${SEV_COLOR[sev]};"></div></div>
+      <div class="count">${String(count).padStart(2,'0')}</div></div>`;
+  }).join('');
+}
+
+function renderSevFilters(){
+  const el = document.getElementById('sevFilters');
+  el.innerHTML = SEV_ORDER.map(s =>
+    `<button class="filter-btn ${state.sevFilter===s?'active':''}" data-sev="${s}">${s}</button>`
+  ).join('');
+  el.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.sevFilter = state.sevFilter === btn.dataset.sev ? null : btn.dataset.sev;
+      renderAll();
+    });
+  });
+  document.getElementById('clearFilter').style.display = (state.deviceFilter||state.sevFilter) ? 'inline' : 'none';
+}
+
+function renderFindingsTable(){
+  const rel = getFilteredFindings();
+  const body = document.getElementById('findingsBody');
+  if (!rel.length){
+    body.innerHTML = '<tr class="empty-row"><td colspan="6">No findings match this filter.</td></tr>';
+    return;
+  }
+  body.innerHTML = rel.map(f => `
+    <tr data-id="${f.id}">
+      <td>${f.time}</td><td>${RAM_GUARD_DATA.devices.find(d=>d.id===f.device).name}</td>
+      <td>${f.process}</td><td>${f.category}</td><td>${f.score}</td>
+      <td><span class="sev-pill sev-${f.severity}">${f.severity}</span></td>
+    </tr>`).join('');
+  body.querySelectorAll('tr[data-id]').forEach(row => {
+    row.addEventListener('click', () => openTestView(Number(row.dataset.id)));
+  });
+}
+
+function renderTrend(){
+  const s = RAM_GUARD_DATA.trendSeries, b = RAM_GUARD_DATA.baselineSeries;
+  const toPoints = arr => arr.map((v,i) => `${(i/(arr.length-1))*400},${120 - (v/120)*110}`).join(' ');
+  document.getElementById('trendA').setAttribute('points', toPoints(s));
+  document.getElementById('trendB').setAttribute('points', toPoints(b));
+}
+
+function renderAll(){
+  renderDeviceStrip(); renderGauge(); renderTopOffenders(); renderSevFilters(); renderFindingsTable(); renderTrend();
+}
+
+document.getElementById('clearFilter').addEventListener('click', () => {
+  state.deviceFilter = null; state.sevFilter = null; renderAll();
+});
+
+/* ---------- individual test view ---------- */
+function openTestView(id){
+  const f = RAM_GUARD_DATA.findings.find(x => x.id === id);
+  if (!f) return;
+  document.getElementById('consoleView').style.display = 'none';
+  document.getElementById('testView').style.display = 'block';
+  document.getElementById('testTitle').textContent = `PROCESS TEST — ${f.process} (PID ${f.pid})`;
+  document.getElementById('scanPct').textContent = Math.min(99, f.score + 15) + '%';
+
+  document.getElementById('testParams').innerHTML = `
+    <div class="kv-row"><span class="k">TEST TYPE</span><span class="v">${f.category}</span></div>
+    <div class="kv-row"><span class="k">TARGET PROCESS</span><span class="v">${f.process} (PID ${f.pid})</span></div>
+    <div class="kv-row"><span class="k">DEVICE</span><span class="v">${RAM_GUARD_DATA.devices.find(d=>d.id===f.device).name}</span></div>
+    <div class="kv-row"><span class="k">BASELINE WINDOW</span><span class="v">${f.baseline}</span></div>
+    <div class="kv-row"><span class="k">SAMPLES CAPTURED</span><span class="v">${f.samples}</span></div>
+    <div class="kv-row"><span class="k">GROWTH RATE</span><span class="v">${f.growthRate}</span></div>
+    <div class="kv-row"><span class="k">RISK SCORE</span><span class="v">${f.score} / 100</span></div>
+    <div class="kv-row"><span class="k">VERDICT</span><span class="verdict-pill" style="background:${SEV_COLOR[f.severity]}">${f.severity}</span></div>
+  `;
+
+  const logLines = [
+    { cls:'muted', text:`[${f.time}] initializing test harness…` },
+    { cls:'',      text:`[${f.time}] attaching to PID ${f.pid} (${f.process})` },
+    { cls:'ok',    text:`[${f.time}] baseline snapshot captured` },
+    { cls:'',      text:`[${f.time}] sampling memory pages… ${Math.round(f.samples*0.6)} / ${f.samples}` },
+    { cls: f.severity==='CLEAR' ? 'ok':'warn', text:`[${f.time}] ${f.category.toLowerCase()} — ${f.severity.toLowerCase()} threshold` },
+    { cls:'',      text:`[${f.time}] compiling risk score<span class="cursor"></span>` },
+  ];
+  const logEl = document.getElementById('scanLog');
+  logEl.innerHTML = logLines.map((l,i) =>
+    `<div class="${l.cls}" style="animation-delay:${0.1+i*0.4}s">${l.text}</div>`
+  ).join('');
+}
+
+document.getElementById('backBtn').addEventListener('click', () => {
+  document.getElementById('testView').style.display = 'none';
+  document.getElementById('consoleView').style.display = 'block';
+});
+
+renderAll();
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+  (function(){
+    if (typeof THREE === 'undefined') return;
+    const canvas = document.getElementById('globeCanvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
+    camera.position.set(0, 0.6, 7.4);
+    function resize(){
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
+    }
+    resize(); window.addEventListener('resize', resize);
+
+    const globeGroup = new THREE.Group(); scene.add(globeGroup);
+    globeGroup.add(new THREE.Mesh(
+      new THREE.SphereGeometry(2.6, 26, 18),
+      new THREE.MeshBasicMaterial({ color:0x2be0f0, wireframe:true, transparent:true, opacity:0.12 })
+    ));
+
+    // globe nodes are driven by actual device risk, not decoration
+    const sevHex = { CLEAR:0x2bffa0, LOW:0xFFD166, WARNING:0xff9d3d, CRITICAL:0xff3b5c };
+    const nodes = [];
+    RAM_GUARD_DATA.devices.forEach((d, i) => {
+      const score = deviceRisk(d.id);
+      const sev = severityFromScore(score);
+      const phi = Math.acos(-1 + (2*i)/RAM_GUARD_DATA.devices.length);
+      const theta = Math.sqrt(RAM_GUARD_DATA.devices.length * Math.PI) * phi;
+      const r = 2.62;
+      const pos = new THREE.Vector3(r*Math.cos(theta)*Math.sin(phi), r*Math.sin(theta)*Math.sin(phi), r*Math.cos(phi));
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.05,8,8), new THREE.MeshBasicMaterial({ color: sevHex[sev] }));
+      mesh.position.copy(pos);
+      globeGroup.add(mesh);
+      nodes.push({ mesh, phase: Math.random()*Math.PI*2 });
+    });
+
+    const clock = new THREE.Clock();
+    function animate(){
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      globeGroup.rotation.y = t * 0.15;
+      globeGroup.rotation.x = Math.sin(t*0.1) * 0.06;
+      nodes.forEach(n => n.mesh.scale.setScalar(1 + Math.sin(t*2 + n.phase)*0.3));
+      renderer.render(scene, camera);
+    }
+    animate();
+  })();
+</script>
+
+</body>
+</html>

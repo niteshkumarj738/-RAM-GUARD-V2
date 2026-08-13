@@ -5,3 +5,4 @@ demo_notify.log
 demo_config.yaml
 *_out.txt
 .streamlit/
+security_console.html
