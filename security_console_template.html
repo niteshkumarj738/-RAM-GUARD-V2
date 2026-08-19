@@ -109,6 +109,101 @@
 
   .note{position:relative; z-index:2; margin-top:20px; font-size:10px; color:var(--muted); text-align:center; letter-spacing:.06em;}
 
+  /* ---------- BRIEFING: exec summary + detector health ---------- */
+  .briefing{position:relative; z-index:2; margin-bottom:18px;}
+  .exec-summary{
+    background:linear-gradient(180deg, rgba(16,31,53,.92), rgba(11,21,36,.94));
+    border:1px solid var(--grid); border-left:3px solid var(--cyan); border-radius:4px;
+    padding:18px 22px; margin-bottom:14px;
+  }
+  .exec-summary .label{font-family:'Orbitron',sans-serif; font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--cyan); margin-bottom:10px; font-weight:700;}
+  .exec-summary p{margin:0; font-size:13px; line-height:1.75; color:var(--text);}
+  .exec-summary b{color:var(--cyan); font-weight:700;}
+
+  .health-row{display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+  .health-card{
+    background:linear-gradient(180deg, var(--panel-hi), var(--panel)); border:1px solid var(--grid);
+    border-radius:4px; padding:14px 16px; position:relative;
+  }
+  .health-card .hc-top{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;}
+  .health-card .hc-name{font-size:11px; font-weight:700; letter-spacing:.03em; color:var(--text); max-width:75%;}
+  .health-card .hc-status{font-size:8.5px; letter-spacing:.08em; font-weight:700; padding:2px 7px; border-radius:2px; background:var(--verdant); color:var(--void); white-space:nowrap;}
+  .health-card .hc-detail{font-size:10px; color:var(--muted); line-height:1.6;}
+
+  /* ---------- VALIDATION RECORD ---------- */
+  .validation-panel{
+    background:linear-gradient(180deg, rgba(16,31,53,.92), rgba(11,21,36,.94));
+    border:1px solid var(--grid); border-radius:4px; padding:20px 22px; margin-bottom:18px;
+  }
+  .validation-panel > h2{font-family:'Orbitron',sans-serif; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); margin:0 0 4px;}
+  .validation-panel > h2 .tag{color:var(--cyan);}
+  .validation-panel > .vp-sub{font-size:10.5px; color:var(--muted); margin-bottom:18px;}
+  .val-block{margin-bottom:20px;}
+  .val-block:last-child{margin-bottom:0;}
+  .val-block .vb-title{font-size:11.5px; font-weight:700; color:var(--text); margin-bottom:10px;}
+  .val-compare{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .val-col{border-radius:3px; padding:12px 14px;}
+  .val-col.before{background:rgba(255,59,92,.08); border:1px solid rgba(255,59,92,.35);}
+  .val-col.after{background:rgba(43,255,160,.08); border:1px solid rgba(43,255,160,.35);}
+  .val-col .vc-label{font-size:9px; letter-spacing:.1em; text-transform:uppercase; margin-bottom:6px; font-weight:700;}
+  .val-col.before .vc-label{color:var(--crimson);}
+  .val-col.after .vc-label{color:var(--verdant);}
+  .val-col .vc-stat{font-family:'Orbitron',sans-serif; font-size:24px; font-weight:900; line-height:1; margin-bottom:4px;}
+  .val-col.before .vc-stat{color:var(--crimson);}
+  .val-col.after .vc-stat{color:var(--verdant);}
+  .val-col .vc-note{font-size:10px; color:var(--muted); line-height:1.5;}
+  .val-evidence-list{font-size:10.5px; color:var(--text); line-height:2; margin-top:2px;}
+  .val-evidence-list .ok{color:var(--verdant);} .val-evidence-list .flag{color:var(--crimson);}
+
+  /* ---------- ACTION BAR (print + provenance) ---------- */
+  .action-bar{
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;
+    margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--grid);
+  }
+  .provenance{font-size:10px; color:var(--muted); letter-spacing:.03em; max-width:60ch; line-height:1.6;}
+  .provenance b{color:var(--cyan);}
+  .print-btn{
+    background:transparent; border:1px solid var(--cyan); color:var(--cyan); font-size:10.5px;
+    letter-spacing:.08em; padding:7px 16px; border-radius:2px; white-space:nowrap; flex:none;
+  }
+  .print-btn:hover{background:rgba(43,224,240,.1);}
+
+  /* ---------- TOOLTIP (pure CSS) ---------- */
+  [data-tooltip]{position:relative; cursor:help;}
+  [data-tooltip]::after{
+    content:attr(data-tooltip); position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%);
+    background:#050C14; border:1px solid var(--grid); color:var(--text); font-family:'JetBrains Mono',monospace;
+    font-size:10px; line-height:1.5; padding:8px 10px; border-radius:3px; width:210px;
+    opacity:0; pointer-events:none; transition:opacity .15s; z-index:10; text-align:left; letter-spacing:normal;
+  }
+  [data-tooltip]:hover::after{opacity:1;}
+
+  /* ---------- FINDINGS TOOLBAR (search + time range) ---------- */
+  .findings-toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; align-items:center;}
+  .search-box{
+    background:#0A1626; border:1px solid var(--grid); color:var(--text); font-family:inherit; font-size:11px;
+    padding:6px 10px; border-radius:2px; flex:1; min-width:140px;
+  }
+  .search-box:focus{outline:none; border-color:var(--cyan);}
+  .search-box::placeholder{color:var(--muted);}
+  .range-btn{
+    background:transparent; border:1px solid var(--grid); color:var(--muted); font-size:9.5px; letter-spacing:.06em;
+    padding:6px 10px; border-radius:2px; white-space:nowrap;
+  }
+  .range-btn:hover{border-color:var(--cyan); color:var(--cyan);}
+  .range-btn.active{background:var(--cyan); color:var(--void); border-color:var(--cyan); font-weight:700;}
+
+  @media print{
+    body{background:#fff; color:#111;}
+    #globeCanvas, .circuit-bg, .veil, .emblem-ring, .emblem-pulse, .print-btn, .filters, .findings-toolbar, .clear-filter{display:none !important;}
+    .panel, .device-card, .health-card, .exec-summary, .validation-panel{
+      background:#fff !important; border:1px solid #999 !important; box-shadow:none !important; color:#111 !important;
+    }
+    .exec-summary p, .hc-detail, .provenance, .val-col .vc-note{color:#333 !important;}
+    table{color:#111;} th{color:#111 !important; background:#eee !important;} td{color:#111 !important;}
+    a{color:#111;}
+  }
+
   /* ---------- INDIVIDUAL TEST VIEW ---------- */
   #testView{display:none;}
   .back-btn{
@@ -181,11 +276,56 @@
       </div>
     </div>
 
+    <div class="action-bar">
+      <div class="provenance"><b>Data provenance:</b> every finding below is sourced from real Windows Event Log entries and live <span style="font-family:'JetBrains Mono',monospace;">psutil</span> process metrics on this machine &mdash; nothing on this page is simulated or illustrative.</div>
+      <button class="print-btn" id="printBtn">&#128438; PRINT / SAVE AS PDF</button>
+    </div>
+
+    <div class="briefing">
+      <div class="exec-summary">
+        <div class="label">Executive Summary</div>
+        <p>__EXEC_SUMMARY__</p>
+      </div>
+      <div class="health-row">__DETECTOR_HEALTH_HTML__</div>
+    </div>
+
+    <div class="validation-panel">
+      <h2>Validation <span class="tag">Record</span></h2>
+      <div class="vp-sub">Real evidence from controlled scenarios and passive real-usage runs &mdash; not projected behaviour. Full detail in test_scenarios/VALIDATION_RESULTS.md.</div>
+
+      <div class="val-block">
+        <div class="vb-title">Leak detector &mdash; found unusably noisy on real data, then fixed</div>
+        <div class="val-compare">
+          <div class="val-col before">
+            <div class="vc-label">Before fix &middot; 7h real run</div>
+            <div class="vc-stat">489<span style="font-size:12px;">/hr</span></div>
+            <div class="vc-note">3,444 findings, 99.6% false positives on Chrome, MemCompression, Edge WebView2</div>
+          </div>
+          <div class="val-col after">
+            <div class="vc-label">After fix &middot; re-validated</div>
+            <div class="vc-stat">0</div>
+            <div class="vc-note">false positives on those same 3 processes &mdash; real leak still caught at 100% consistency</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="val-block">
+        <div class="vb-title">Crash-signature detector &mdash; validated against real machine history, not a synthetic demo</div>
+        <div class="val-evidence-list">
+          <div><span class="ok">&#10003;</span> 6 / 6 real historical corruption-class crashes correctly identified (process, PID, exception)</div>
+          <div><span class="ok">&#10003;</span> 191 unrelated .NET exceptions in the same history correctly excluded</div>
+        </div>
+      </div>
+    </div>
+
     <div class="surface" id="deviceStrip"></div>
 
     <div class="grid">
       <div class="panel gauge-wrap">
-        <h2 style="align-self:flex-start;">Risk <span class="tag">Score</span> <span id="gaugeScope" style="float:right; font-size:9px; color:var(--muted); text-transform:none;"></span></h2>
+        <h2 style="align-self:flex-start;">Risk <span class="tag">Score</span>
+          <span data-tooltip="Highest single finding score currently in view (0-29 clear, 30-59 low, 60-79 warning, 80-100 critical). Not an average -- one severe finding sets the gauge." style="cursor:help; color:var(--muted); font-size:10px;">&#9432;</span>
+          <span id="gaugeScope" style="float:right; font-size:9px; color:var(--muted); text-transform:none;"></span>
+        </h2>
         <svg width="150" height="90" viewBox="0 0 150 90">
           <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#0F2338" stroke-width="14" stroke-linecap="round"/>
           <path d="M 15 80 A 60 60 0 0 1 135 80" fill="none" stroke="#2BFFA0" stroke-width="14" stroke-dasharray="47 141" stroke-linecap="round" opacity=".85"/>
@@ -218,6 +358,12 @@
     <div class="footer-row">
       <div class="panel">
         <h2>Findings <span class="tag">Log</span> <span class="clear-filter" id="clearFilter">clear filter &times;</span></h2>
+        <div class="findings-toolbar">
+          <input type="text" class="search-box" id="searchBox" placeholder="Search by process name&hellip;">
+          <button class="range-btn" data-range="3600">LAST HOUR</button>
+          <button class="range-btn" data-range="86400">LAST 24H</button>
+          <button class="range-btn active" data-range="">ALL TIME</button>
+        </div>
         <div class="filters" id="sevFilters"></div>
         <table>
           <thead><tr><th>Time</th><th>Device</th><th>Process</th><th>Category</th><th>Score</th><th>Severity</th></tr></thead>
@@ -289,7 +435,7 @@ window.RAM_GUARD_DATA = __RAM_GUARD_DATA_JSON__;
 const SEV_COLOR = { CLEAR:'var(--verdant)', LOW:'#FFD166', WARNING:'var(--amber)', CRITICAL:'var(--crimson)' };
 const SEV_ORDER = ['CRITICAL','WARNING','LOW','CLEAR'];
 
-const state = { deviceFilter:null, sevFilter:null };
+const state = { deviceFilter:null, sevFilter:null, search:'', rangeSeconds:null };
 
 function severityFromScore(score){
   if (score >= 80) return 'CRITICAL';
@@ -309,9 +455,12 @@ function deviceIcon(type){
 }
 
 function getFilteredFindings(){
+  const refEpoch = RAM_GUARD_DATA.generatedAtEpoch || 0;
   return RAM_GUARD_DATA.findings.filter(f =>
     (!state.deviceFilter || f.device === state.deviceFilter) &&
-    (!state.sevFilter || f.severity === state.sevFilter)
+    (!state.sevFilter || f.severity === state.sevFilter) &&
+    (!state.search || f.process.toLowerCase().includes(state.search)) &&
+    (!state.rangeSeconds || (refEpoch - f.epoch) <= state.rangeSeconds)
   );
 }
 
@@ -438,6 +587,22 @@ function renderAll(){
 document.getElementById('clearFilter').addEventListener('click', () => {
   state.deviceFilter = null; state.sevFilter = null; renderAll();
 });
+
+document.getElementById('searchBox').addEventListener('input', (e) => {
+  state.search = e.target.value.trim().toLowerCase();
+  renderAll();
+});
+
+document.querySelectorAll('.range-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.rangeSeconds = btn.dataset.range ? Number(btn.dataset.range) : null;
+    renderAll();
+  });
+});
+
+document.getElementById('printBtn').addEventListener('click', () => window.print());
 
 /* ---------- individual test view ---------- */
 function openTestView(id){
