@@ -89,6 +89,14 @@ def run_process_scan(monitor: ProcessMemoryMonitor, notifier: Notifier, logger, 
                     f.pid, f.name, f.kind, f.severity, f.risk_score, f.detail)
         if silent:
             continue
+        # Every finding is still logged (and visible in the dashboard/console)
+        # regardless of severity -- only CRITICAL findings interrupt with a
+        # popup/mobile/email alert. A lone high-memory or leak-suspect hit is
+        # "warning": worth a look, not urgent enough to interrupt. Combined
+        # multi-indicator risk, real crashes, and Linux WX-pages are the
+        # ones that actually escalate to critical.
+        if f.severity != "critical":
+            continue
         notifier.notify(
             title=f"{f.kind.replace('_', ' ').title()} — {f.name} (PID {f.pid})",
             message=f.detail,
