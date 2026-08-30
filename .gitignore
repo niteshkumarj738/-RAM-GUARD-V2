@@ -13,3 +13,5 @@ ram_guard.log.hashes
 .ramguard_heartbeat
 streamlit_out.log
 streamlit_err.log
+main_stdout.log
+main_stderr.log
