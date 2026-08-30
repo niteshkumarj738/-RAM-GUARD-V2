@@ -40,6 +40,14 @@ CATALOGUE_RE = re.compile(
     r"(?P<status>EXPOSED / REVIEW NEEDED|MITIGATED / NOT AFFECTED)"
 )
 
+SIGNATURE_RE = re.compile(
+    r"^(?P<ts>[\d\-]+ [\d:,]+) \| \w+\s+\| ram_guard\.\w+ \| "
+    r"Signature finding: sig_id=(?P<sig_id>\S+) cve=(?P<cve>.+?) name=(?P<name>.+?) "
+    r"severity=(?P<severity>\S+) detail=(?P<detail>.*)$"
+)
+
+SIGNATURE_SCORE = {"critical": 90, "warning": 65, "info": 35}
+
 CATEGORY_LABELS = {
     "high_memory": "High Memory Usage",
     "leak_suspect": "Memory Leak Growth",
@@ -58,19 +66,24 @@ NUM_TREND_BUCKETS = 11
 
 def parse_log(path: Path):
     findings = []
+    sig_findings = []
     catalogue = {}  # vuln_id -> {"name": ..., "status": ...}, latest wins
     if not path.exists():
-        return findings, catalogue
+        return findings, sig_findings, catalogue
     with open(path, encoding="utf-8", errors="ignore") as f:
         for line in f:
             m = LINE_RE.match(line.strip())
             if m:
                 findings.append(m.groupdict())
                 continue
+            sm = SIGNATURE_RE.match(line.strip())
+            if sm:
+                sig_findings.append(sm.groupdict())
+                continue
             cm = CATALOGUE_RE.search(line)
             if cm:
                 catalogue[cm.group("id")] = {"name": cm.group("name"), "status": cm.group("status")}
-    return findings, catalogue
+    return findings, sig_findings, catalogue
 
 
 def build_findings(raw_findings):
@@ -110,6 +123,36 @@ def build_findings(raw_findings):
     return findings
 
 
+def build_signature_findings(raw_sig_findings, start_id):
+    findings = []
+    for i, f in enumerate(raw_sig_findings, start=start_id):
+        sev = SEVERITY_MAP.get(f["severity"].lower(), "LOW")
+        time_part = f["ts"].split(",")[0].split(" ")[-1]
+        try:
+            dt = datetime.strptime(f["ts"], "%Y-%m-%d %H:%M:%S,%f")
+            epoch = dt.timestamp()
+            full_time = dt.strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            epoch = 0
+            full_time = f["ts"]
+        findings.append({
+            "id": i,
+            "time": time_part,
+            "fullTime": full_time,
+            "epoch": epoch,
+            "device": "this-machine",
+            "process": f["cve"],
+            "pid": 0,
+            "category": f"CVE Signature: {f['name']}",
+            "score": SIGNATURE_SCORE.get(f["severity"].lower(), 35),
+            "severity": sev,
+            "growthRate": "n/a",
+            "samples": 0,
+            "baseline": "static offline CVE catalogue (signature_scan.py)",
+        })
+    return findings
+
+
 def build_summary(findings, host_name):
     if not findings:
         return (f"No findings recorded yet for {host_name}. Once RAM-Guard runs a scan "
@@ -130,7 +173,7 @@ def build_summary(findings, host_name):
     )
 
 
-def build_detector_health(catalogue):
+def build_detector_health(catalogue, sig_findings):
     exposed = sum(1 for v in catalogue.values() if v["status"].startswith("EXPOSED"))
     total_cat = len(catalogue) or 4
     cards = [
@@ -151,6 +194,12 @@ def build_detector_health(catalogue):
             "status": "ACTIVE (WIN)",
             "detail": "Reads the Windows Event Log every 30s. Validated against 6 real "
                       "historical corruption-class crashes on this machine.",
+        },
+        {
+            "name": "CVE Signature Scan",
+            "status": "ACTIVE",
+            "detail": f"5 named-CVE signatures checked against installed software/host "
+                      f"config, offline &middot; {len(sig_findings)} matched this run.",
         },
     ]
     return "".join(
@@ -184,8 +233,9 @@ def main():
     parser.add_argument("--out", default=str(Path(__file__).parent / "security_console.html"))
     args = parser.parse_args()
 
-    raw_findings, catalogue = parse_log(Path(args.log))
+    raw_findings, raw_sig_findings, catalogue = parse_log(Path(args.log))
     findings = build_findings(raw_findings)
+    findings += build_signature_findings(raw_sig_findings, start_id=len(findings) + 1)
     trend, baseline = build_trend(findings)
 
     mem = psutil.virtual_memory()
@@ -213,7 +263,7 @@ def main():
         .replace("__RAM_USED_PCT__", str(mem.percent))
         .replace("__UPTIME_HOURS__", str(uptime_hours))
         .replace("__EXEC_SUMMARY__", build_summary(findings, host_name))
-        .replace("__DETECTOR_HEALTH_HTML__", build_detector_health(catalogue))
+        .replace("__DETECTOR_HEALTH_HTML__", build_detector_health(catalogue, raw_sig_findings))
     )
 
     Path(args.out).write_text(output, encoding="utf-8")

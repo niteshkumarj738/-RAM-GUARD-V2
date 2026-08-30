@@ -55,6 +55,28 @@ crash a process, using Windows' own exception system as the authority —
 a black-box, after-the-fact signal, consistent with how the rest of
 RAM-Guard works.
 
+**4. Signature-based CVE detection** (`detector/signature_scan.py`) —
+matches installed software and known-risky host configuration against a
+static, offline catalogue of **named, documented CVEs**, entirely local —
+no network calls, no live feed. Two signature types:
+
+| Type | How it matches | Example |
+|---|---|---|
+| `software_version` | Installed program version (read from the Windows Uninstall registry — the same data Control Panel reads) at or below a known-vulnerable version | WinRAR < 5.70 → CVE-2018-20250 (ACE extraction RCE) |
+| `host_config` | A specific, checkable host setting that is the documented defense-in-depth mitigation for a named CVE, independent of patch level | SMBv1 enabled → CVE-2017-0144 (EternalBlue exposure class) |
+
+Full current catalogue (5 signatures): WinRAR ACE RCE (CVE-2018-20250),
+7-Zip heap overflow (CVE-2016-2334/2335), VLC heap over-read
+(CVE-2019-13615), SMBv1-enabled (CVE-2017-0144/MS17-010), and
+RDP-without-NLA (CVE-2019-0708/BlueKeep). Each entry's severity comes from
+the CVE itself, not a hardcoded default.
+
+**This layer behaves differently from the other three, on purpose:** every
+signature match notifies immediately, regardless of severity. A version
+match against a named CVE is a *fact* about the host — not a probabilistic
+behavioural signal like "this process is using a lot of RAM" — so it isn't
+gated to critical-only the way the process/crash monitors are.
+
 ## Architecture
 
 ```
@@ -63,6 +85,8 @@ detector/
   process_monitor.py       Live per-process RAM anomaly detection
   known_vulnerabilities.py Static catalogue + host exposure checks
   crash_monitor.py         Windows Event Log memory-corruption crash signatures
+  signature_scan.py        Static, offline catalogue of named CVEs matched against
+                            installed software / host config — always notifies on a match
 notifier.py         Cross-platform desktop popup + instant mobile push via ntfy.sh (with cooldown)
 dashboard.py         Streamlit dashboard for live visualization
 config.yaml          All thresholds / intervals in one place
@@ -176,6 +200,8 @@ All thresholds live in `config.yaml`:
 - `leak_growth_mb_per_min` — flag sustained RSS growth above this rate
 - `poll_interval_seconds` — live monitor frequency
 - `check_interval_seconds` — how often the known-vulnerability catalogue re-runs
+- `signature_scan.check_interval_seconds` — how often the CVE signature catalogue re-runs
+  (installed software/host config rarely changes, so this defaults to hourly, not every poll)
 
 ## Validation
 
@@ -258,8 +284,11 @@ exposes that data programmatically to any tool, ours included.
   display/notification backend is available (e.g. headless server).
 
 ## Possible extensions
-- Wire `known_vulnerabilities.py` to a live NVD/CVE feed for continuously
-  updated RAM-related CVE matching against installed OS/kernel version.
-- Add email/webhook notification channel alongside desktop popups.
+- Wire `detector/signature_scan.py`'s static catalogue to a live NVD/CVE
+  feed for continuously updated matching, instead of the current
+  hand-curated local list — trades offline/dependency-free operation for
+  freshness.
+- Add a Slack/Discord webhook notification channel alongside desktop
+  popups, mobile push, and email.
 - Persist findings to a time-series store for trend analysis over an
   internship/report period.

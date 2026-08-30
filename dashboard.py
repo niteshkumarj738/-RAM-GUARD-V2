@@ -3,6 +3,8 @@ dashboard.py
 
 Streamlit dashboard for RAM-Guard. Gives a live, presentable view of:
   - current process memory findings
+  - memory-corruption crash signatures (Windows Event Log)
+  - CVE signature matches (installed software / host config)
   - known RAM-vulnerability-class exposure status
 
 Run with: streamlit run dashboard.py
@@ -15,6 +17,7 @@ import streamlit as st
 from detector.process_monitor import ProcessMemoryMonitor
 from detector.known_vulnerabilities import run_catalogue_scan
 from detector.crash_monitor import CrashCorruptionMonitor
+from detector.signature_scan import run_signature_scan
 import yaml
 
 st.set_page_config(page_title="RAM-Guard", page_icon="🛡️", layout="wide")
@@ -90,6 +93,31 @@ if crash_findings:
     st.dataframe(crash_df.style.apply(_crash_color, axis=1), use_container_width=True, hide_index=True)
 else:
     st.success("No memory-corruption-class crashes in the lookback window.")
+
+# --- CVE signature scan ------------------------------------------------------
+st.subheader("CVE Signature Matches")
+st.caption(
+    "Installed software and host configuration checked against a static, "
+    "offline catalogue of named, documented CVEs — no network calls. A "
+    "match is a concrete fact about the host, not a heuristic, so every "
+    "match is shown here regardless of severity."
+)
+sig_findings = run_signature_scan()
+
+if sig_findings:
+    sig_df = pd.DataFrame([{
+        "CVE": f.cve_id, "Name": f.name, "Severity": f.severity, "Detail": f.detail,
+    } for f in sig_findings])
+
+    def _sig_color(row):
+        c = {"critical": "background-color:#ffcccc;color:#4a0000",
+             "warning": "background-color:#fff3cd;color:#4a3800",
+             "info": "background-color:#d1ecf1;color:#003547"}.get(row["Severity"], "")
+        return [c] * len(row)
+
+    st.dataframe(sig_df.style.apply(_sig_color, axis=1), use_container_width=True, hide_index=True)
+else:
+    st.success("No known CVE signatures matched on this host.")
 
 # --- Known vulnerability catalogue ------------------------------------------
 st.subheader("Known RAM Vulnerability Class Exposure")

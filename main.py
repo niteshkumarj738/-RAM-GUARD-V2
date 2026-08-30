@@ -1,7 +1,7 @@
 """
 RAM-Guard: RAM Vulnerability Detection & Alerting System
 -----------------------------------------------------------
-Entry point. Runs three complementary detection layers on a schedule:
+Entry point. Runs four complementary detection layers on a schedule:
 
   1. Live process memory monitor  -> catches leaks / abnormal usage /
                                       (best-effort) WX-page exploitation signs
@@ -13,9 +13,16 @@ Entry point. Runs three complementary detection layers on a schedule:
                                       free, double-free) at the moment it
                                       actually crashes a process, via Windows'
                                       own OS-confirmed exception codes
+  4. Signature scan -> matches installed software / host config against a
+                                      static, offline catalogue of named,
+                                      documented CVEs (see
+                                      detector/signature_scan.py)
 
-Findings from all three layers raise desktop notifications (with cooldown)
-and are logged to file for later review / reporting.
+Findings from all four layers are logged to file for later review /
+reporting. Desktop/mobile/email alerts fire on every signature-scan match
+(a version match against a named CVE is a fact, not a guess) and on
+critical-severity findings from the process and crash monitors; the
+known-vulnerability catalogue is log-only (see run_known_vuln_scan).
 
 Usage:
     python main.py                # run continuous monitoring loop
@@ -34,6 +41,7 @@ import yaml
 from detector.process_monitor import ProcessMemoryMonitor
 from detector.known_vulnerabilities import run_catalogue_scan
 from detector.crash_monitor import CrashCorruptionMonitor
+from detector.signature_scan import run_signature_scan
 from notifier import Notifier
 
 
@@ -113,6 +121,12 @@ def run_crash_scan(monitor: CrashCorruptionMonitor, notifier: Notifier, logger, 
                     f.pid, f.name, f.kind, f.severity, f.risk_score, f.detail)
         if silent:
             continue
+        # Only critical findings interrupt with a popup/mobile/email alert,
+        # consistent with the process scan below. Crash findings are always
+        # critical by construction (OS-confirmed corruption), but the check
+        # is kept explicit rather than assumed.
+        if f.severity != "critical":
+            continue
         notifier.notify(
             title=f"Memory Corruption Crash — {f.name} (PID {f.pid})",
             message=f.detail,
@@ -122,14 +136,15 @@ def run_crash_scan(monitor: CrashCorruptionMonitor, notifier: Notifier, logger, 
     return findings
 
 
-def run_known_vuln_scan(notifier: Notifier, logger, silent: bool = False, last_status: dict = None):
+def run_known_vuln_scan(logger, last_status: dict = None):
     """Runs the catalogue check every cycle (so the log/dashboard always
-    reflect current status), but only raises a notification when a vuln's
-    exposure status actually CHANGES -- otherwise a static, unchanging
-    "review needed" for something like Rowhammer (which can never be
-    software-verified, so it's always exposed=True by design) would
-    re-notify every single scan interval forever, which is exactly the
-    kind of alert-fatigue noise a real detector shouldn't produce."""
+    reflect current status). Catalogue exposures are inherently "review
+    needed" (e.g. Rowhammer, which can never be software-verified and is
+    always exposed=True by design) rather than an active in-progress
+    threat, so this never pops a popup/mobile/email alert -- only critical
+    findings from the process/crash scans do that. Still logged every
+    cycle either way, and last_status is kept up to date for callers that
+    want to track exposure changes over time."""
     if last_status is None:
         last_status = {}
     results = run_catalogue_scan()
@@ -137,18 +152,31 @@ def run_known_vuln_scan(notifier: Notifier, logger, silent: bool = False, last_s
         status = "EXPOSED / REVIEW NEEDED" if res.exposed else "MITIGATED / NOT AFFECTED"
         logger.info("Catalogue check: %s (%s) -> %s | %s",
                     vc.name, vc.vuln_id, status, res.detail)
-        changed = last_status.get(vc.vuln_id) != res.exposed
         last_status[vc.vuln_id] = res.exposed
+    return results
+
+
+def run_signature_scan_pass(notifier: Notifier, logger, silent: bool = False):
+    """Static, offline signature matching: installed software / host config
+    against a local catalogue of real, named CVEs (see
+    detector/signature_scan.py). Unlike every other scan in this file, this
+    ALWAYS notifies on a match, at whatever severity the signature carries
+    -- a version match against a named CVE is a concrete fact about the
+    host, not a probabilistic behavioural signal like the process monitor's
+    findings, so it isn't gated to critical-only."""
+    findings = run_signature_scan()
+    for f in findings:
+        logger.info("Signature finding: sig_id=%s cve=%s name=%s severity=%s detail=%s",
+                    f.sig_id, f.cve_id, f.name, f.severity, f.detail)
         if silent:
             continue
-        if res.exposed and changed:
-            notifier.notify(
-                title=f"{vc.name} ({vc.vuln_id})",
-                message=f"{status}: {res.detail}",
-                key=f"cat:{vc.vuln_id}",
-                severity="info",
-            )
-    return results
+        notifier.notify(
+            title=f"{f.name} ({f.cve_id})",
+            message=f.detail,
+            key=f"sig:{f.sig_id}",
+            severity=f.severity,
+        )
+    return findings
 
 
 def main():
@@ -189,6 +217,10 @@ def main():
     crash_enabled = crash_cfg.get("enabled", True)
     crash_interval = crash_cfg.get("check_interval_seconds", 30)
 
+    signature_cfg = cfg.get("signature_scan", {})
+    signature_enabled = signature_cfg.get("enabled", True)
+    signature_interval = signature_cfg.get("check_interval_seconds", 3600)
+
     logger.info("RAM-Guard starting up. silent_mode=%s", silent)
     last_catalogue_scan = 0.0
     catalogue_interval = cfg["known_vulnerability_scan"]["check_interval_seconds"]
@@ -199,25 +231,31 @@ def main():
     if args.once:
         run_process_scan(monitor, notifier, logger, silent=silent)
         if catalogue_enabled:
-            run_known_vuln_scan(notifier, logger, silent=silent, last_status=catalogue_status)
+            run_known_vuln_scan(logger, last_status=catalogue_status)
             save_catalogue_status(status_path, catalogue_status)
         if crash_enabled:
             run_crash_scan(crash_monitor, notifier, logger, silent=silent)
+        if signature_enabled:
+            run_signature_scan_pass(notifier, logger, silent=silent)
         logger.info("Single scan complete.")
         return
 
     poll_interval = cfg["scan"]["poll_interval_seconds"]
     last_crash_scan = 0.0
+    last_signature_scan = 0.0
     try:
         while True:
             run_process_scan(monitor, notifier, logger, silent=silent)
             if catalogue_enabled and (time.time() - last_catalogue_scan) >= catalogue_interval:
-                run_known_vuln_scan(notifier, logger, silent=silent, last_status=catalogue_status)
+                run_known_vuln_scan(logger, last_status=catalogue_status)
                 save_catalogue_status(status_path, catalogue_status)
                 last_catalogue_scan = time.time()
             if crash_enabled and (time.time() - last_crash_scan) >= crash_interval:
                 run_crash_scan(crash_monitor, notifier, logger, silent=silent)
                 last_crash_scan = time.time()
+            if signature_enabled and (time.time() - last_signature_scan) >= signature_interval:
+                run_signature_scan_pass(notifier, logger, silent=silent)
+                last_signature_scan = time.time()
             time.sleep(poll_interval)
     except KeyboardInterrupt:
         logger.info("RAM-Guard stopped by user.")

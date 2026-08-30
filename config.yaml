@@ -42,3 +42,10 @@ crash_monitor:
   enabled: true                   # Windows only; silently inert on other platforms
   check_interval_seconds: 30      # how often to poll the Windows Application Event Log
   lookback_minutes: 10            # how far back to look for new crash events each check
+
+signature_scan:
+  enabled: true
+  check_interval_seconds: 3600    # installed software/host config rarely changes between scans.
+                                   # Every match here ALWAYS notifies (see main.py), regardless of
+                                   # severity -- a version match against a named CVE is a fact
+                                   # about the host, not a heuristic like the other detectors.
