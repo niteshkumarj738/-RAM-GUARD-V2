@@ -4,8 +4,16 @@ notifier.py
 Cross-platform desktop popup notifications + optional instant mobile push
 (via ntfy.sh), with a simple cooldown so the same finding doesn't spam the
 user every poll cycle.
+
+Desktop popups use `windows-toasts` on Windows -- a real native Windows
+toast via the WinRT notification API, not plyer's Windows backend, which
+was found (by actually testing it) to shell out to a PowerShell script
+that flashes a visible console window instead of showing a clean toast.
+`plyer` remains the desktop-notification path on Linux/macOS, where it
+works normally.
 """
 
+import platform
 import time
 import logging
 import smtplib
@@ -13,10 +21,22 @@ from email.mime.text import MIMEText
 
 import requests
 
-try:
-    from plyer import notification as _plyer_notification
-except Exception:  # plyer may not have a backend on some minimal systems
-    _plyer_notification = None
+_IS_WINDOWS = platform.system() == "Windows"
+
+_windows_toaster = None
+if _IS_WINDOWS:
+    try:
+        from windows_toasts import Toast as _WinToast, WindowsToaster as _WindowsToaster
+        _windows_toaster = _WindowsToaster("RAM-Guard")
+    except Exception:  # winrt bindings may be missing/broken on some systems
+        _windows_toaster = None
+
+_plyer_notification = None
+if not _IS_WINDOWS or _windows_toaster is None:
+    try:
+        from plyer import notification as _plyer_notification
+    except Exception:  # plyer may not have a backend on some minimal systems
+        _plyer_notification = None
 
 logger = logging.getLogger("ram_guard.notifier")
 
@@ -47,23 +67,38 @@ class Notifier:
         self._last_sent[key] = time.time()
         logger.warning("[%s] %s - %s", severity.upper(), title, message)
 
-        if _plyer_notification is None:
-            print(f"\n[RAM-GUARD ALERT | {severity.upper()}] {title}\n{message}\n")
-            return
-
-        try:
-            _plyer_notification.notify(
-                title=f"RAM-Guard: {title}",
-                message=message[:250],
-                app_name="RAM-Guard",
-                timeout=10,
-            )
-        except Exception as e:
-            logger.error("Desktop notification failed (%s); printing instead.", e)
+        if not self._show_desktop_popup(title, message):
             print(f"\n[RAM-GUARD ALERT | {severity.upper()}] {title}\n{message}\n")
 
         self._send_mobile_push(title, message, severity)
         self._send_email(title, message, severity)
+
+    def _show_desktop_popup(self, title: str, message: str) -> bool:
+        """Returns True if a popup was actually shown, False if it fell
+        through to every available backend without success (caller prints
+        to console in that case)."""
+        if _windows_toaster is not None:
+            try:
+                toast = _WinToast()
+                toast.text_fields = [f"RAM-Guard: {title}", message[:250]]
+                _windows_toaster.show_toast(toast)
+                return True
+            except Exception as e:
+                logger.error("Windows toast notification failed (%s); trying plyer.", e)
+
+        if _plyer_notification is not None:
+            try:
+                _plyer_notification.notify(
+                    title=f"RAM-Guard: {title}",
+                    message=message[:250],
+                    app_name="RAM-Guard",
+                    timeout=10,
+                )
+                return True
+            except Exception as e:
+                logger.error("Desktop notification failed (%s); printing instead.", e)
+
+        return False
 
     def _send_email(self, title: str, message: str, severity: str):
         """Send an alert email that lands as a normal phone notification via
