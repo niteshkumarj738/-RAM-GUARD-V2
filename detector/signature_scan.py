@@ -163,6 +163,38 @@ def _check_smbv1_enabled() -> Optional[str]:
     return None
 
 
+def _check_smbv3_compression() -> Optional[str]:
+    """CVE-2020-0796 ("SMBGhost") is a wormable heap-based buffer overflow in
+    the SMBv3 compression handler (Windows 10 1903/1909). Microsoft's
+    published interim mitigation, for systems that can't immediately patch,
+    is disabling SMBv3 compression via registry (ADV200005 / KB4551762).
+    Flags hosts where that mitigation registry value isn't set to disabled --
+    same defense-in-depth convention as the SMBv1 and RDP/NLA checks above:
+    patched systems aren't vulnerable to the original exploit either way,
+    this just reports whether the documented interim mitigation is active."""
+    if not _IS_WINDOWS:
+        return None
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters",
+        )
+        try:
+            value, _ = winreg.QueryValueEx(key, "DisableCompression")
+        except FileNotFoundError:
+            value = 0  # absent -- OS default is compression enabled, i.e. not mitigated
+        if value == 1:
+            return None  # mitigation active
+        return ("SMBv3 compression mitigation (DisableCompression) not set. This is "
+                "Microsoft's documented interim mitigation for CVE-2020-0796 "
+                "(\"SMBGhost\"), a wormable heap buffer overflow in SMBv3 compression "
+                "handling, for systems that haven't applied the March 2020 patch: "
+                "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\"
+                "LanmanServer\\Parameters' -Name 'DisableCompression' -Value 1 -Force.")
+    except Exception:
+        return None
+
+
 def _check_rdp_without_nla() -> Optional[str]:
     """BlueKeep (CVE-2019-0708) was a pre-authentication use-after-free in
     Remote Desktop Services. Network Level Authentication (NLA) forces
@@ -245,6 +277,34 @@ SOFTWARE_SIGNATURES: List[SoftwareSignature] = [
                     "adjacent heap memory contents.",
         reference="CVE-2019-13615 (VideoLAN, 2019)",
     ),
+    SoftwareSignature(
+        sig_id="SIG-004",
+        cve_id="CVE-2018-4878",
+        name="Adobe Flash Player Use-After-Free",
+        category="Use-After-Free / Remote Code Execution",
+        product_match="adobe flash player",
+        fixed_version="28.0.0.137",
+        severity="critical",
+        description="Use-after-free in the ActionScript 2 NetStream class, exploited "
+                    "in the wild via crafted Flash content before a public fix existed. "
+                    "Included for legacy/regulated-environment coverage: Flash Player "
+                    "reached end-of-life in Jan 2021 and was force-removed on most "
+                    "consumer systems, but older or air-gapped machines can still carry it.",
+        reference="CVE-2018-4878 (KISA/Adobe APSA18-01, 2018)",
+    ),
+    SoftwareSignature(
+        sig_id="SIG-005",
+        cve_id="CVE-2021-36367",
+        name="PuTTY Integer Overflow -> Heap Buffer Overflow (terminal emulation)",
+        category="Heap Memory Corruption",
+        product_match="putty",
+        fixed_version="0.75",
+        severity="warning",
+        description="An integer overflow in PuTTY's terminal-emulation handling of "
+                    "certain crafted escape sequences could lead to a heap-based buffer "
+                    "overflow, triggerable by a malicious server or MITM the user connects to.",
+        reference="CVE-2021-36367 (PuTTY vulnerability list, 2021)",
+    ),
 ]
 
 CONFIG_SIGNATURES: List[ConfigSignature] = [
@@ -265,6 +325,15 @@ CONFIG_SIGNATURES: List[ConfigSignature] = [
         severity="warning",
         check=_check_rdp_without_nla,
         reference="CVE-2019-0708 (2019)",
+    ),
+    ConfigSignature(
+        sig_id="SIG-103",
+        cve_id="CVE-2020-0796",
+        name="SMBv3 Compression Mitigation Not Set (SMBGhost exposure class)",
+        category="Heap Memory Corruption / Wormable RCE",
+        severity="warning",
+        check=_check_smbv3_compression,
+        reference="CVE-2020-0796, ADV200005 (Microsoft, 2020)",
     ),
 ]
 

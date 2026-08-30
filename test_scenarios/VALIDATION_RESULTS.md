@@ -190,6 +190,42 @@ corruption exception codes are treated as findings. This matters as much
 as the positive result: a detector that flagged every crash indiscriminately
 would be as useless as the pre-fix leak detector was.
 
+### 9. Adversarial validation — deliberate evasion attempts, not cooperative tests
+
+Sections 1-8 above all validate detection against scenarios *designed to
+trigger* the detector. `test_scenarios/adversarial_validation.py` instead
+tries to *evade* the leak-suspect detector, calling the same unmodified
+`ProcessMemoryMonitor` class `main.py` uses. Two real attempts, real
+captured results:
+
+```
+[low-and-slow leak] target PID=27328, running for up to 40s...
+[low-and-slow leak] RESULT: EVADED -- no leak_suspect finding for PID 27328 in 42s
+
+[sawtooth leak] target PID=5592, running for up to 60s...
+[sawtooth leak] RESULT: DETECTED -- RSS growing ~32.5 MB/min over 5 samples
+  (30->33 MB), 100% consistently upward
+```
+
+**Result 1 — low-and-slow (growth held deliberately below the 25 MB/min
+threshold): evasion succeeded.** This is an expected, inherent limitation
+of any rate-threshold detector, not a bug — there is always some growth
+rate below which it cannot be distinguished from normal usage. Documented
+here rather than treated as a gap that was missed.
+
+**Result 2 — sawtooth (fast growth with deliberate periodic partial
+releases, designed to break the 75%-consistency requirement added after
+the false-positive fix in section 7): evasion failed, detection held.**
+Caught within the first 5 samples in this run, before a scheduled dip
+landed inside the sampling window. **Caveat, stated honestly:** this
+result is timing-sensitive — whether a dip lands inside the detector's
+sample window before `min_samples` is reached depends on the relative
+timing between the attacker's dip schedule and the scan interval. A single
+run passing doesn't prove the consistency check can't be defeated by a
+differently-timed attacker; it proves it wasn't defeated by *this*
+attempt. Worth more runs with varied timing before treating this as a
+settled result either way.
+
 ## Honest scope of this validation
 
 - Sections 1-4 (Linux) and 5-7 (Windows) were both run for real, on real
@@ -197,10 +233,14 @@ would be as useless as the pre-fix leak detector was.
   vulnerability-catalogue code paths for it are logically sound (documented
   fallback to manual review where no API exists) but unexercised.
 - These are self-triggered, controlled scenarios (plus one real multi-hour
-  passive run), not real-world malware or an actual exploit. They prove the
-  detector logic works against the exact pattern it's designed for, and —
-  for the 7-hour run — against real ordinary usage. They don't prove
-  RAM-Guard would catch a sophisticated, evasive real attacker.
+  passive run and, in section 9, two real evasion attempts), not
+  real-world malware or an actual exploit. They prove the detector logic
+  works against the exact pattern it's designed for, holds up against at
+  least one deliberate evasion attempt, and — for the 7-hour run — against
+  real ordinary usage. They don't prove RAM-Guard would catch a
+  sophisticated, sustained, real evasive attacker — section 9's own caveat
+  about timing-sensitivity is a concrete example of why that claim still
+  isn't earned.
 - The known-vulnerability catalogue (Rowhammer, Meltdown, cold boot, DMA)
   wasn't separately validated here since those checks read system state
   rather than react to a triggerable condition — they were exercised

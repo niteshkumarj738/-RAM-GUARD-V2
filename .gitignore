@@ -7,3 +7,7 @@ demo_config.yaml
 .streamlit/
 security_console.html
 .catalogue_status.json
+findings_export.csv
+findings_export.json
+ram_guard.log.hashes
+.ramguard_heartbeat

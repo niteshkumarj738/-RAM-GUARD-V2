@@ -198,7 +198,7 @@ def build_detector_health(catalogue, sig_findings):
         {
             "name": "CVE Signature Scan",
             "status": "ACTIVE",
-            "detail": f"5 named-CVE signatures checked against installed software/host "
+            "detail": f"8 named-CVE signatures checked against installed software/host "
                       f"config, offline &middot; {len(sig_findings)} matched this run.",
         },
     ]

@@ -35,6 +35,14 @@ Where software cannot conclusively verify exposure (e.g. Rowhammer depends
 on DRAM refresh timing, cold-boot depends on physical access policy), the
 tool flags it explicitly as "review needed" rather than guessing.
 
+**Scope note on RG-001 (Rowhammer):** this check covers the original
+bit-flip/data-corruption form of Rowhammer. It does not cover **RAMBleed**
+(2019), a related but distinct attack that uses the same DRAM row-hammering
+mechanism as a *read* side channel to leak the contents of adjacent memory
+rather than corrupt them. Detecting RAMBleed specifically would require
+watching for the same hammering access pattern with a different goal in
+mind — noted here rather than silently lumped into the RG-001 result.
+
 **3. Application-level memory corruption crashes, Windows only**
 (`detector/crash_monitor.py`) — watches the Windows Application Event Log
 for process crashes whose exception code is a direct, OS-confirmed
@@ -65,11 +73,13 @@ no network calls, no live feed. Two signature types:
 | `software_version` | Installed program version (read from the Windows Uninstall registry — the same data Control Panel reads) at or below a known-vulnerable version | WinRAR < 5.70 → CVE-2018-20250 (ACE extraction RCE) |
 | `host_config` | A specific, checkable host setting that is the documented defense-in-depth mitigation for a named CVE, independent of patch level | SMBv1 enabled → CVE-2017-0144 (EternalBlue exposure class) |
 
-Full current catalogue (5 signatures): WinRAR ACE RCE (CVE-2018-20250),
+Full current catalogue (8 signatures): WinRAR ACE RCE (CVE-2018-20250),
 7-Zip heap overflow (CVE-2016-2334/2335), VLC heap over-read
-(CVE-2019-13615), SMBv1-enabled (CVE-2017-0144/MS17-010), and
-RDP-without-NLA (CVE-2019-0708/BlueKeep). Each entry's severity comes from
-the CVE itself, not a hardcoded default.
+(CVE-2019-13615), Adobe Flash Player use-after-free (CVE-2018-4878), PuTTY
+integer-overflow/heap overflow (CVE-2021-36367), SMBv1-enabled
+(CVE-2017-0144/MS17-010), RDP-without-NLA (CVE-2019-0708/BlueKeep), and
+SMBv3-compression-mitigation-unset (CVE-2020-0796/SMBGhost). Each entry's
+severity comes from the CVE itself, not a hardcoded default.
 
 **This layer behaves differently from the other three, on purpose:** every
 signature match notifies immediately, regardless of severity. A version
@@ -89,6 +99,11 @@ detector/
                             installed software / host config — always notifies on a match
 notifier.py         Cross-platform desktop popup + instant mobile push via ntfy.sh (with cooldown)
 dashboard.py         Streamlit dashboard for live visualization
+generate_security_console.py  Standalone printable HTML security report, built from real log data
+export_findings.py   Exports all findings (all four layers) from the log to CSV/JSON
+log_integrity.py      SHA-256 hash-chains the log so tampering after the fact is detectable
+watchdog.py           Independent process-health check; alerts if the main loop stops
+install_task.py       Registers main.py + watchdog.py as auto-restarting Windows Scheduled Tasks
 config.yaml          All thresholds / intervals in one place
 ```
 
@@ -118,6 +133,12 @@ python main.py --silent
 **Dashboard view:**
 ```bash
 streamlit run dashboard.py
+```
+
+**Export all findings to CSV/JSON** (for a spreadsheet or an external
+trend-analysis tool):
+```bash
+python export_findings.py
 ```
 
 ## Mobile push alerts (ntfy.sh)
@@ -237,6 +258,59 @@ Prints total findings, broken down by type and process — the real evidence
 for whether current thresholds are too sensitive for this machine, instead
 of a guess.
 
+### Adversarial validation (deliberate evasion attempts)
+
+```bash
+python test_scenarios/adversarial_validation.py
+```
+Unlike every scenario above, this one tries to *evade* the leak-suspect
+detector rather than trigger it cleanly, calling the same unmodified
+detector class `main.py` uses. Real results, both directions, are captured
+in [`test_scenarios/VALIDATION_RESULTS.md`](test_scenarios/VALIDATION_RESULTS.md#9-adversarial-validation--deliberate-evasion-attempts-not-cooperative-tests)
+— including a case where evasion succeeded and is documented as an honest,
+expected limitation rather than hidden.
+
+## Tamper resistance
+
+A monitoring tool that can be silently killed by anything with process
+access isn't much of a monitor. Three independent layers address this,
+without adding any new pip dependencies:
+
+- **Log integrity** (`log_integrity.py`) — every log line is SHA-256
+  hash-chained into a sidecar file (`ram_guard.log.hashes`) as it's
+  written. Editing, deleting, or reordering any line breaks every hash
+  computed after it, not just that one — detectable after the fact via
+  `python log_integrity.py --verify`. This does not *prevent* tampering by
+  someone with write access to both files; no local file-based scheme can.
+  It catches incomplete/casual tampering (editing the log without also
+  rebuilding a matching hash chain), which is the realistic bar for a
+  local tool — full protection would need a remote, append-only log
+  destination.
+- **Watchdog** (`watchdog.py`) — `main.py` writes a heartbeat timestamp
+  once per scan cycle. The watchdog is a *separate* process that checks
+  whether that heartbeat has gone stale (default: 3 missed cycles + 30s
+  margin) and raises a critical alert if so. It's deliberately not a
+  thread inside `main.py` — a killed `main.py` process would silence an
+  in-process watchdog at exactly the moment it needs to speak up.
+- **Auto-restart** (`install_task.py`, Windows only) — registers `main.py`
+  and `watchdog.py` as Windows Scheduled Tasks (not a SYSTEM-level
+  service, deliberately — desktop popups need the interactive user
+  session), each with its own logon trigger / repeating schedule and
+  restart-on-failure settings, so killing either process gets it relaunched
+  rather than staying dead.
+  ```bash
+  python install_task.py            # register both tasks
+  python install_task.py --status   # check current registration
+  python install_task.py --uninstall
+  ```
+
+**Honest limit:** this raises the bar from "trivially killed with no
+trace" to "killing it is noticed and it gets relaunched" — it does not
+make RAM-Guard un-killable. An attacker with local admin rights can still
+remove the scheduled tasks themselves, or stop the watchdog's own task.
+That's a real constraint of any user-mode monitoring tool without kernel-
+level protection, stated plainly rather than implied away.
+
 ## OS support
 
 Tested logic paths per platform (desktop popups, email, and push work
@@ -283,6 +357,31 @@ exposes that data programmatically to any tool, ours included.
 - Desktop notifications use `plyer` and fall back to console output if no
   display/notification backend is available (e.g. headless server).
 
+## Out of scope, by design
+
+RAM-related security is a large field. The categories below are real,
+active attack classes against RAM that RAM-Guard **deliberately does not
+attempt to detect**, because each requires fundamentally different tooling
+than a host-based Python monitor can provide — this is a scoping decision,
+not an oversight:
+
+- **Microarchitectural side channels beyond Meltdown/Spectre** — Foreshadow,
+  ZombieLoad, RIDL, Fallout, Retbleed, Downfall, Zenbleed, Inception/SRSO,
+  and RAMBleed (see the RG-001 note above). These require CPU
+  performance-counter instrumentation or vendor microcode-level analysis,
+  not something observable from userspace process/OS state.
+- **Physical/electromagnetic attacks** — bus/interposer probing, chip-off
+  extraction, TEMPEST-style EM emission analysis. These need physical
+  sensors and lab equipment, not software.
+- **Exploitation-technique-level detection** — ROP chains, heap
+  spraying/grooming. These describe *how* an exploit is constructed, not an
+  OS-visible artifact; detecting them needs binary
+  instrumentation/hooking at the process level, a different tool category
+  from black-box behavioural/log monitoring.
+- **Virtualization/cloud memory attacks** — cross-VM side channels via
+  memory deduplication, attacks on hardware memory encryption (SEV, SGX/TME).
+  Not applicable to RAM-Guard's single-host deployment model.
+
 ## Possible extensions
 - Wire `detector/signature_scan.py`'s static catalogue to a live NVD/CVE
   feed for continuously updated matching, instead of the current
@@ -290,5 +389,6 @@ exposes that data programmatically to any tool, ours included.
   freshness.
 - Add a Slack/Discord webhook notification channel alongside desktop
   popups, mobile push, and email.
-- Persist findings to a time-series store for trend analysis over an
-  internship/report period.
+- `export_findings.py` covers ad-hoc CSV/JSON export today; a real
+  time-series store (e.g. SQLite or InfluxDB) would be the next step for
+  ongoing trend analysis over a longer deployment period.
