@@ -102,8 +102,8 @@ dashboard.py         Streamlit dashboard for live visualization
 generate_security_console.py  Standalone printable HTML security report, built from real log data
 export_findings.py   Exports all findings (all four layers) from the log to CSV/JSON
 log_integrity.py      SHA-256 hash-chains the log so tampering after the fact is detectable
-watchdog.py           Independent process-health check; alerts if the main loop stops
-install_task.py       Registers main.py + watchdog.py as auto-restarting Windows Scheduled Tasks
+process_watchdog.py    Independent process-health check; alerts if the main loop stops
+install_task.py       Registers main.py + process_watchdog.py as auto-restarting Windows Scheduled Tasks
 config.yaml          All thresholds / intervals in one place
 ```
 
@@ -286,14 +286,18 @@ without adding any new pip dependencies:
   rebuilding a matching hash chain), which is the realistic bar for a
   local tool — full protection would need a remote, append-only log
   destination.
-- **Watchdog** (`watchdog.py`) — `main.py` writes a heartbeat timestamp
-  once per scan cycle. The watchdog is a *separate* process that checks
-  whether that heartbeat has gone stale (default: 3 missed cycles + 30s
-  margin) and raises a critical alert if so. It's deliberately not a
+- **Watchdog** (`process_watchdog.py`) — `main.py` writes a heartbeat
+  timestamp once per scan cycle. The watchdog is a *separate* process that
+  checks whether that heartbeat has gone stale (default: 3 missed cycles +
+  30s margin) and raises a critical alert if so. It's deliberately not a
   thread inside `main.py` — a killed `main.py` process would silence an
   in-process watchdog at exactly the moment it needs to speak up.
+  Deliberately not named `watchdog.py`: that name collides with the real
+  PyPI `watchdog` package (Streamlit's own file-watcher dependency),
+  which broke the dashboard's websocket connection the first time this
+  was tested — see git history for the fix.
 - **Auto-restart** (`install_task.py`, Windows only) — registers `main.py`
-  and `watchdog.py` as Windows Scheduled Tasks (not a SYSTEM-level
+  and `process_watchdog.py` as Windows Scheduled Tasks (not a SYSTEM-level
   service, deliberately — desktop popups need the interactive user
   session), each with its own logon trigger / repeating schedule and
   restart-on-failure settings, so killing either process gets it relaunched

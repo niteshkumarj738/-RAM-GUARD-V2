@@ -1,5 +1,5 @@
 """
-watchdog.py
+process_watchdog.py
 
 Independent process-health check for RAM-Guard: reads the heartbeat file
 main.py writes once per scan cycle, and reports whether it's stale --
@@ -15,9 +15,15 @@ intrusion-detection system -- it's the practical answer to "what stops
 someone from just ending the python.exe process," which a plain script
 with no supervision has no answer to at all.
 
+Named process_watchdog.py, not watchdog.py, on purpose: a top-level
+watchdog.py in this project directory shadows the real PyPI "watchdog"
+package (Streamlit's own file-watcher dependency) whenever anything is run
+from this folder -- found the hard way when it silently broke the
+dashboard's websocket connection. Keep it named this way.
+
 Usage:
-    python watchdog.py --once       # single check, for scheduled-task use
-    python watchdog.py              # loop, checking every --interval seconds
+    python process_watchdog.py --once       # single check, for scheduled-task use
+    python process_watchdog.py              # loop, checking every --interval seconds
 """
 
 import argparse

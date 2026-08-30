@@ -49,7 +49,7 @@ HEARTBEAT_FILE = Path(__file__).parent / ".ramguard_heartbeat"
 
 
 def write_heartbeat():
-    """Written once per scan cycle so watchdog.py -- a separate, independently
+    """Written once per scan cycle so process_watchdog.py -- a separate, independently
     scheduled process -- can tell whether this loop is still alive. Doing
     this as a file check rather than an in-process thread is deliberate: a
     watchdog that shares main.py's process would go silent at the exact

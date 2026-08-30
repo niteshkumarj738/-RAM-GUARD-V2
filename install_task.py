@@ -10,10 +10,11 @@ supervision at all.
 Two tasks are created:
   RAMGuard-Monitor   runs `python main.py` at user logon, auto-restarting
                      on failure (RestartCount / RestartInterval).
-  RAMGuard-Watchdog  runs `python watchdog.py --once` every 5 minutes,
-                     independently of whether the monitor task is alive --
-                     a watchdog that could be killed alongside what it's
-                     watching isn't a watchdog (see watchdog.py).
+  RAMGuard-Watchdog  runs `python process_watchdog.py --once` every 5
+                     minutes, independently of whether the monitor task is
+                     alive -- a watchdog that could be killed alongside
+                     what it's watching isn't a watchdog (see
+                     process_watchdog.py).
 
 This is Task Scheduler registration, not a true Windows Service (no
 SYSTEM-account background service is created) -- deliberately: desktop
@@ -56,7 +57,7 @@ $settings = New-ScheduledTaskSettingsSet -RestartCount 5 -RestartInterval (New-T
 Register-ScheduledTask -TaskName '{TASK_MONITOR}' -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
 """
     watchdog_ps = f"""
-$action = New-ScheduledTaskAction -Execute '{PYTHON_EXE}' -Argument 'watchdog.py --once' -WorkingDirectory '{REPO_DIR}'
+$action = New-ScheduledTaskAction -Execute '{PYTHON_EXE}' -Argument 'process_watchdog.py --once' -WorkingDirectory '{REPO_DIR}'
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName '{TASK_WATCHDOG}' -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null

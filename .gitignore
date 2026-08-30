@@ -11,3 +11,5 @@ findings_export.csv
 findings_export.json
 ram_guard.log.hashes
 .ramguard_heartbeat
+streamlit_out.log
+streamlit_err.log
