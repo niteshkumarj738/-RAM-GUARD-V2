@@ -57,7 +57,7 @@ Register-ScheduledTask -TaskName '{TASK_MONITOR}' -Action $action -Trigger $trig
 """
     watchdog_ps = f"""
 $action = New-ScheduledTaskAction -Execute '{PYTHON_EXE}' -Argument 'watchdog.py --once' -WorkingDirectory '{REPO_DIR}'
-$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration ([TimeSpan]::MaxValue)
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5) -RepetitionDuration (New-TimeSpan -Days 3650)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName '{TASK_WATCHDOG}' -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
 """
