@@ -42,7 +42,22 @@ from detector.process_monitor import ProcessMemoryMonitor
 from detector.known_vulnerabilities import run_catalogue_scan
 from detector.crash_monitor import CrashCorruptionMonitor
 from detector.signature_scan import run_signature_scan
+from log_integrity import HashChainHandler
 from notifier import Notifier
+
+HEARTBEAT_FILE = Path(__file__).parent / ".ramguard_heartbeat"
+
+
+def write_heartbeat():
+    """Written once per scan cycle so watchdog.py -- a separate, independently
+    scheduled process -- can tell whether this loop is still alive. Doing
+    this as a file check rather than an in-process thread is deliberate: a
+    watchdog that shares main.py's process would go silent at the exact
+    moment main.py is killed, which is the one moment it needs to speak up."""
+    try:
+        HEARTBEAT_FILE.write_text(str(time.time()), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -80,12 +95,14 @@ def setup_logging(cfg: dict):
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+    hash_handler = HashChainHandler(log_file + ".hashes")
     logging.basicConfig(
         level=level,
         format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         handlers=[
             logging.FileHandler(log_file, encoding="utf-8"),
             logging.StreamHandler(sys.stdout),
+            hash_handler,
         ],
     )
 
@@ -243,8 +260,10 @@ def main():
     poll_interval = cfg["scan"]["poll_interval_seconds"]
     last_crash_scan = 0.0
     last_signature_scan = 0.0
+    write_heartbeat()
     try:
         while True:
+            write_heartbeat()
             run_process_scan(monitor, notifier, logger, silent=silent)
             if catalogue_enabled and (time.time() - last_catalogue_scan) >= catalogue_interval:
                 run_known_vuln_scan(logger, last_status=catalogue_status)
