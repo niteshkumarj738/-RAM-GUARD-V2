@@ -49,3 +49,17 @@ signature_scan:
                                    # Every match here ALWAYS notifies (see main.py), regardless of
                                    # severity -- a version match against a named CVE is a fact
                                    # about the host, not a heuristic like the other detectors.
+
+fleet_reporting:
+  enabled: false                  # off by default -- see fleet_reporting.py and
+                                   # fleet_collector_example.py. Not gated by --silent: this is
+                                   # the mechanism a fleet deployment relies on INSTEAD of local
+                                   # popups, so --silent (which only suppresses local interrupts)
+                                   # doesn't suppress this too.
+  collector_url: "http://127.0.0.1:9000"   # where fleet_collector_example.py (or a real one) listens.
+                                   # Use a literal IP, not "localhost" -- on this machine "localhost"
+                                   # added ~2s per request from IPv6-then-IPv4 resolution fallback.
+  device_id: ""                   # blank = auto (this machine's hostname)
+  api_key: ""                     # optional shared key sent as X-API-Key; must match the
+                                   # collector's --api-key if set. Plain HTTP, no TLS -- see
+                                   # fleet_reporting.py's docstring for the honest security scope.

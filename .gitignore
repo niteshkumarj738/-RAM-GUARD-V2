@@ -15,3 +15,4 @@ streamlit_out.log
 streamlit_err.log
 main_stdout.log
 main_stderr.log
+fleet_findings.jsonl

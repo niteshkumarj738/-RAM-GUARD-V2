@@ -315,6 +315,51 @@ remove the scheduled tasks themselves, or stop the watchdog's own task.
 That's a real constraint of any user-mode monitoring tool without kernel-
 level protection, stated plainly rather than implied away.
 
+## Fleet reporting (optional, off by default)
+
+RAM-Guard normally runs as one machine watching itself — its own log, its
+own dashboard, its own report. `fleet_reporting.py` adds the option to
+also ship every finding, from all four layers, to a central collector, so
+multiple protected machines can be reviewed from one place instead of each
+being its own island. Not gated by `--silent`: silent mode only suppresses
+local desktop/mobile/email interruptions on that machine, it isn't meant
+to hide findings from a central collector a fleet deployment relies on
+instead of local popups.
+
+`fleet_collector_example.py` is a reference receiver (stdlib-only HTTP
+server, findings stored as JSONL, optional shared `X-API-Key` header) —
+enough to prove the protocol works, not a production collector.
+
+```bash
+# terminal 1: start the reference collector
+python fleet_collector_example.py --port 9000 --api-key mysecret
+
+# config.yaml: point a RAM-Guard instance at it
+fleet_reporting:
+  enabled: true
+  collector_url: "http://127.0.0.1:9000"
+  api_key: "mysecret"
+
+# terminal 2: check what's been received
+python fleet_collector_example.py --summary
+```
+
+**Honest scope of what's validated here:** the sender and this reference
+receiver have been tested against each other for real — confirmed the
+wire format, the HTTP contract, and the API-key rejection (both a missing
+key and a wrong key correctly get `401`, and never reach the findings
+store) all work correctly. That's genuine validation of the *protocol*.
+It is **not** validation of a real multi-device fleet, since that would
+need actual different machines reporting in, which doesn't exist in this
+environment — don't read "protocol validated" as "fleet-tested."
+
+**Honest security scope, stated rather than glossed over:** this ships
+security findings over plain HTTP with one shared API key, no TLS, no
+per-device credentials. Fine for a local/trusted-network demo. A
+production version behind a real network would need at minimum HTTPS,
+per-device auth tokens instead of one shared key, and a real datastore
+instead of a flat file.
+
 ## OS support
 
 Tested logic paths per platform (desktop popups, email, and push work

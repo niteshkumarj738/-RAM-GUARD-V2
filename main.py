@@ -42,6 +42,7 @@ from detector.process_monitor import ProcessMemoryMonitor
 from detector.known_vulnerabilities import run_catalogue_scan
 from detector.crash_monitor import CrashCorruptionMonitor
 from detector.signature_scan import run_signature_scan
+from fleet_reporting import FleetReporter
 from log_integrity import HashChainHandler
 from notifier import Notifier
 
@@ -107,11 +108,17 @@ def setup_logging(cfg: dict):
     )
 
 
-def run_process_scan(monitor: ProcessMemoryMonitor, notifier: Notifier, logger, silent: bool = False):
+def run_process_scan(monitor: ProcessMemoryMonitor, notifier: Notifier, logger, fleet: FleetReporter, silent: bool = False):
     findings = monitor.scan_once()
     for f in findings:
         logger.info("Process finding: pid=%s name=%s kind=%s severity=%s score=%s detail=%s",
                     f.pid, f.name, f.kind, f.severity, f.risk_score, f.detail)
+        # Fleet reporting isn't gated by --silent: --silent only suppresses
+        # local desktop/mobile/email interruptions on this machine, it isn't
+        # meant to hide findings from a central collector a fleet deployment
+        # relies on instead of local popups.
+        fleet.report("process", {"pid": f.pid, "name": f.name, "kind": f.kind,
+                                  "severity": f.severity, "score": f.risk_score, "detail": f.detail})
         if silent:
             continue
         # Every finding is still logged (and visible in the dashboard/console)
@@ -131,11 +138,13 @@ def run_process_scan(monitor: ProcessMemoryMonitor, notifier: Notifier, logger, 
     return findings
 
 
-def run_crash_scan(monitor: CrashCorruptionMonitor, notifier: Notifier, logger, silent: bool = False):
+def run_crash_scan(monitor: CrashCorruptionMonitor, notifier: Notifier, logger, fleet: FleetReporter, silent: bool = False):
     findings = monitor.scan_once()
     for f in findings:
         logger.info("Crash finding: pid=%s name=%s kind=%s severity=%s score=%s detail=%s",
                     f.pid, f.name, f.kind, f.severity, f.risk_score, f.detail)
+        fleet.report("crash", {"pid": f.pid, "name": f.name, "kind": f.kind,
+                                "severity": f.severity, "score": f.risk_score, "detail": f.detail})
         if silent:
             continue
         # Only critical findings interrupt with a popup/mobile/email alert,
@@ -153,7 +162,7 @@ def run_crash_scan(monitor: CrashCorruptionMonitor, notifier: Notifier, logger, 
     return findings
 
 
-def run_known_vuln_scan(logger, last_status: dict = None):
+def run_known_vuln_scan(logger, fleet: FleetReporter, last_status: dict = None):
     """Runs the catalogue check every cycle (so the log/dashboard always
     reflect current status). Catalogue exposures are inherently "review
     needed" (e.g. Rowhammer, which can never be software-verified and is
@@ -169,11 +178,13 @@ def run_known_vuln_scan(logger, last_status: dict = None):
         status = "EXPOSED / REVIEW NEEDED" if res.exposed else "MITIGATED / NOT AFFECTED"
         logger.info("Catalogue check: %s (%s) -> %s | %s",
                     vc.name, vc.vuln_id, status, res.detail)
+        fleet.report("catalogue", {"vuln_id": vc.vuln_id, "name": vc.name,
+                                    "status": status, "detail": res.detail})
         last_status[vc.vuln_id] = res.exposed
     return results
 
 
-def run_signature_scan_pass(notifier: Notifier, logger, silent: bool = False):
+def run_signature_scan_pass(notifier: Notifier, logger, fleet: FleetReporter, silent: bool = False):
     """Static, offline signature matching: installed software / host config
     against a local catalogue of real, named CVEs (see
     detector/signature_scan.py). Unlike every other scan in this file, this
@@ -185,6 +196,8 @@ def run_signature_scan_pass(notifier: Notifier, logger, silent: bool = False):
     for f in findings:
         logger.info("Signature finding: sig_id=%s cve=%s name=%s severity=%s detail=%s",
                     f.sig_id, f.cve_id, f.name, f.severity, f.detail)
+        fleet.report("signature", {"sig_id": f.sig_id, "cve_id": f.cve_id, "name": f.name,
+                                    "severity": f.severity, "detail": f.detail})
         if silent:
             continue
         notifier.notify(
@@ -238,6 +251,14 @@ def main():
     signature_enabled = signature_cfg.get("enabled", True)
     signature_interval = signature_cfg.get("check_interval_seconds", 3600)
 
+    fleet_cfg = cfg.get("fleet_reporting", {})
+    fleet = FleetReporter(
+        enabled=fleet_cfg.get("enabled", False),
+        collector_url=fleet_cfg.get("collector_url", ""),
+        device_id=fleet_cfg.get("device_id", ""),
+        api_key=fleet_cfg.get("api_key", ""),
+    )
+
     logger.info("RAM-Guard starting up. silent_mode=%s", silent)
     last_catalogue_scan = 0.0
     catalogue_interval = cfg["known_vulnerability_scan"]["check_interval_seconds"]
@@ -246,14 +267,14 @@ def main():
     catalogue_status = load_catalogue_status(status_path)
 
     if args.once:
-        run_process_scan(monitor, notifier, logger, silent=silent)
+        run_process_scan(monitor, notifier, logger, fleet, silent=silent)
         if catalogue_enabled:
-            run_known_vuln_scan(logger, last_status=catalogue_status)
+            run_known_vuln_scan(logger, fleet, last_status=catalogue_status)
             save_catalogue_status(status_path, catalogue_status)
         if crash_enabled:
-            run_crash_scan(crash_monitor, notifier, logger, silent=silent)
+            run_crash_scan(crash_monitor, notifier, logger, fleet, silent=silent)
         if signature_enabled:
-            run_signature_scan_pass(notifier, logger, silent=silent)
+            run_signature_scan_pass(notifier, logger, fleet, silent=silent)
         logger.info("Single scan complete.")
         return
 
@@ -264,16 +285,16 @@ def main():
     try:
         while True:
             write_heartbeat()
-            run_process_scan(monitor, notifier, logger, silent=silent)
+            run_process_scan(monitor, notifier, logger, fleet, silent=silent)
             if catalogue_enabled and (time.time() - last_catalogue_scan) >= catalogue_interval:
-                run_known_vuln_scan(logger, last_status=catalogue_status)
+                run_known_vuln_scan(logger, fleet, last_status=catalogue_status)
                 save_catalogue_status(status_path, catalogue_status)
                 last_catalogue_scan = time.time()
             if crash_enabled and (time.time() - last_crash_scan) >= crash_interval:
-                run_crash_scan(crash_monitor, notifier, logger, silent=silent)
+                run_crash_scan(crash_monitor, notifier, logger, fleet, silent=silent)
                 last_crash_scan = time.time()
             if signature_enabled and (time.time() - last_signature_scan) >= signature_interval:
-                run_signature_scan_pass(notifier, logger, silent=silent)
+                run_signature_scan_pass(notifier, logger, fleet, silent=silent)
                 last_signature_scan = time.time()
             time.sleep(poll_interval)
     except KeyboardInterrupt:
