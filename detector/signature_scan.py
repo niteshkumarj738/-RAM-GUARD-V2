@@ -100,10 +100,22 @@ _UNINSTALL_KEYS = [
 ]
 
 
+_TRAILING_VERSION_RE = re.compile(r"(\d+(?:\.\d+){1,3})\s*$")
+
+
 def _installed_software() -> List[Tuple[str, str]]:
     """Read (DisplayName, DisplayVersion) pairs from the standard Windows
     Uninstall registry locations. No elevated privileges required -- this
-    is the same data Control Panel > Programs reads from."""
+    is the same data Control Panel > Programs reads from.
+
+    Some installers -- mostly older ones, like 7-Zip 9.20's -- never write a
+    separate DisplayVersion value at all and bake the version straight into
+    DisplayName instead (e.g. "7-Zip 9.20"). Originally this function
+    required DisplayVersion and silently dropped the entire entry, DisplayName
+    included, whenever it was missing -- found via a real installed-software
+    test that a genuinely vulnerable old version went completely undetected,
+    not a hypothetical. Now falls back to a trailing-version-number pattern
+    in DisplayName before giving up on an entry."""
     if not _IS_WINDOWS:
         return []
     results: List[Tuple[str, str]] = []
@@ -123,10 +135,16 @@ def _installed_software() -> List[Tuple[str, str]]:
                 try:
                     subkey = winreg.OpenKey(key, subkey_name)
                     name, _ = winreg.QueryValueEx(subkey, "DisplayName")
-                    version, _ = winreg.QueryValueEx(subkey, "DisplayVersion")
-                    results.append((str(name), str(version)))
                 except OSError:
                     continue
+                try:
+                    version, _ = winreg.QueryValueEx(subkey, "DisplayVersion")
+                except OSError:
+                    m = _TRAILING_VERSION_RE.search(str(name))
+                    if not m:
+                        continue  # no DisplayVersion and nothing parseable in the name -- skip
+                    version = m.group(1)
+                results.append((str(name), str(version)))
         finally:
             winreg.CloseKey(key)
     return results
@@ -353,10 +371,14 @@ def run_signature_scan() -> List[SignatureFinding]:
             below = _version_below(version, sig.fixed_version)
             if below is not True:
                 continue  # not vulnerable, or version unparsable -- don't guess
+            # Some installers (e.g. 7-Zip 9.20's) bake the version straight
+            # into DisplayName, so name already ends with the version --
+            # don't repeat it or the detail reads "7-Zip 9.20 9.20 installed".
+            installed_desc = name if name.rstrip().endswith(version) else f"{name} {version}"
             findings.append(SignatureFinding(
                 sig_id=sig.sig_id, cve_id=sig.cve_id, name=sig.name,
                 severity=sig.severity,
-                detail=f"{name} {version} installed (fixed in {sig.fixed_version}) -- "
+                detail=f"{installed_desc} installed (fixed in {sig.fixed_version}) -- "
                        f"{sig.description} [{sig.reference}]",
             ))
 
