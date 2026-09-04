@@ -33,6 +33,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -225,6 +226,14 @@ def main():
 
     mobile_cfg = cfg["notifications"].get("mobile_push", {})
     email_cfg = cfg["notifications"].get("email", {})
+    # The app password comes from an environment variable, never from
+    # config.yaml -- config.yaml is tracked in git and pushed to a public
+    # repo, so a real credential written into it would leak. Falls back to
+    # whatever's in config.yaml only if the env var isn't set, so a purely
+    # local/offline setup that never pushes still works either way.
+    env_password = os.environ.get("RAMGUARD_EMAIL_APP_PASSWORD")
+    if env_password:
+        email_cfg = {**email_cfg, "sender_app_password": env_password}
     notifier = Notifier(
         enabled=cfg["notifications"]["enabled"],
         cooldown_seconds=cfg["notifications"]["cooldown_seconds"],

@@ -88,8 +88,14 @@ class Notifier:
 
         if _plyer_notification is not None:
             try:
+                # plyer's Windows fallback uses the legacy balloon-tip API,
+                # which hard-caps the title at 64 characters and raises
+                # ValueError if exceeded -- found by a real finding with an
+                # 89-character title crashing this exact path.
+                full_title = f"RAM-Guard: {title}"
+                plyer_title = full_title if len(full_title) <= 63 else full_title[:60] + "..."
                 _plyer_notification.notify(
-                    title=f"RAM-Guard: {title}",
+                    title=plyer_title,
                     message=message[:250],
                     app_name="RAM-Guard",
                     timeout=10,

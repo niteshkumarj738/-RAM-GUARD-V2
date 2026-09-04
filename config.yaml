@@ -20,12 +20,13 @@ notifications:
     ntfy_topic: "nitesh-ramguard-k47xq2p9"   # install the ntfy app, subscribe to this exact topic
                                                   # make it unique/hard-to-guess since ntfy topics are public by name
   email:
-    enabled: false                  # set true after filling in the fields below
+    enabled: true
     smtp_host: "smtp.gmail.com"     # Gmail's SMTP server (works for any Gmail sender)
     smtp_port: 587
-    sender_email: "your.email@gmail.com"
-    sender_app_password: "PASTE_16_CHAR_APP_PASSWORD_HERE"   # NOT your normal Gmail password — see README
-    recipient_email: "your.email@gmail.com"   # can be the same address; phone will notify on new mail
+    sender_email: "niteshrudhra@gmail.com"
+    sender_app_password: ""         # intentionally blank -- real password comes from the
+                                     # RAMGUARD_EMAIL_APP_PASSWORD environment variable, see main.py
+    recipient_email: "niteshrudhra@gmail.com"
 
 logging:
   log_file: "ram_guard.log"
