@@ -16,7 +16,7 @@ notifications:
   enabled: true
   cooldown_seconds: 120           # don't re-notify for the same finding within this window
   mobile_push:
-    enabled: true
+    enabled: false
     ntfy_topic: "nitesh-ramguard-k47xq2p9"   # install the ntfy app, subscribe to this exact topic
                                                   # make it unique/hard-to-guess since ntfy topics are public by name
   email:
