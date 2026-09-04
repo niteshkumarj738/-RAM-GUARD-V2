@@ -130,9 +130,10 @@ cat_df = pd.DataFrame([{
 st.dataframe(cat_df, use_container_width=True, hide_index=True)
 
 st.caption(
-    "Note: hardware-class checks (Rowhammer, cold-boot, DMA) cannot be fully verified "
-    "in software alone and are flagged for manual firmware/BIOS/IOMMU review where "
-    "conclusive detection isn't possible from userspace."
+    "Meltdown/Spectre, MDS, and L1TF read a real Windows mitigation-override registry "
+    "value (or the Linux kernel's own per-vulnerability status file); DMA reads a real "
+    "Kernel DMA Protection registry flag. None of these are guessed -- where a value is "
+    "absent, that's reported honestly as \"can't fully confirm\" rather than assumed safe."
 )
 
 if auto_refresh:

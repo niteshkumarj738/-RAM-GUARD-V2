@@ -26,22 +26,30 @@ the same process as more meaningful than any single one alone.
 A reference catalogue with non-invasive host checks for:
 | ID | Vulnerability | Category |
 |----|---------------|----------|
-| RG-001 | Rowhammer | Hardware / DRAM bit-flip |
-| RG-002 | Meltdown / Spectre | Speculative-execution RAM disclosure |
-| RG-003 | Cold Boot Attack | Physical / RAM remanence |
+| RG-001 | Meltdown / Spectre | Speculative-execution RAM disclosure |
+| RG-002 | MDS (ZombieLoad / RIDL / Fallout) | Speculative-execution RAM disclosure |
+| RG-003 | L1TF / Foreshadow | Speculative-execution RAM disclosure |
 | RG-004 | DMA Attack | Physical / peripheral RAM access |
 
-Where software cannot conclusively verify exposure (e.g. Rowhammer depends
-on DRAM refresh timing, cold-boot depends on physical access policy), the
-tool flags it explicitly as "review needed" rather than guessing.
+Every entry here has a **real, software-checkable signal** on at least one
+platform: a Windows mitigation-override registry value (documented in
+Microsoft's KB4072698) for the three speculative-execution entries, or the
+Linux kernel's own per-vulnerability status file
+(`/sys/devices/system/cpu/vulnerabilities/*`); DMA reads a real Kernel DMA
+Protection registry flag on Windows. Where a signal is absent, the tool
+says so honestly ("can't fully confirm") rather than assuming either
+outcome — see each check's docstring in `known_vulnerabilities.py` for the
+exact mechanism.
 
-**Scope note on RG-001 (Rowhammer):** this check covers the original
-bit-flip/data-corruption form of Rowhammer. It does not cover **RAMBleed**
-(2019), a related but distinct attack that uses the same DRAM row-hammering
-mechanism as a *read* side channel to leak the contents of adjacent memory
-rather than corrupt them. Detecting RAMBleed specifically would require
-watching for the same hammering access pattern with a different goal in
-mind — noted here rather than silently lumped into the RG-001 result.
+**Deliberately not included: Rowhammer and Cold Boot attacks.** Both are
+real, well-known RAM vulnerabilities — but no operating system, on any
+platform, exposes DRAM refresh-timing data (Rowhammer) or RAM-remanence
+state (cold-boot) to software. A "check" for either would always be a
+hardcoded guess, not a real result, so they're named here as explicitly
+out of scope rather than represented as something this tool verifies. The
+same applies to **RAMBleed** (2019), a related Rowhammer variant that uses
+the same row-hammering mechanism as a *read* side channel rather than
+corrupting memory — also unverifiable from software.
 
 **3. Application-level memory corruption crashes, Windows only**
 (`detector/crash_monitor.py`) — watches the Windows Application Event Log
@@ -369,9 +377,13 @@ identically everywhere; the table below is about the *detection* layers):
 |---|---|---|---|
 | Process memory usage / leak detection | ✅ Full | ✅ Full | ✅ Full |
 | WX (writable+executable) page detection | ✅ Full (`/proc/<pid>/maps`) | ✅ Full (`VirtualQueryEx` region scan) | ⚠️ Degrades silently (no per-page perms without elevated entitlements) |
-| Meltdown/Spectre exposure | ✅ Kernel sysfs read | ✅ Registry-based check | ⚠️ Manual (no public API) |
+| Meltdown/Spectre / MDS / L1TF exposure | ✅ Kernel sysfs read | ✅ Registry-based check | ⚠️ Manual (no public API) |
 | DMA attack exposure | ✅ Manual pointer (IOMMU) | ✅ Registry-based check | ⚠️ Manual pointer |
-| Rowhammer / cold-boot exposure | ⚠️ Manual pointer (all OSes — no OS exposes this) | ⚠️ Manual pointer | ⚠️ Manual pointer |
+| Rowhammer / cold-boot exposure | Not attempted (any OS) | Not attempted (any OS) | Not attempted (any OS) |
+
+Rowhammer and cold-boot are deliberately not attempted on any platform —
+see "Deliberately not included" above; no OS exposes this data to any
+software, so there is no partial or manual-pointer check to offer either.
 
 "Degrades silently" means the check simply returns no findings for that
 specific sub-check rather than crashing — the rest of the tool keeps running
@@ -399,10 +411,12 @@ exposes that data programmatically to any tool, ours included.
   candidate the baseline validation run (see below) exists to surface.
   macOS has no equivalent per-page permission API available without
   elevated entitlements and is not supported.
-- Hardware-class checks (Rowhammer, cold-boot, DMA) cannot be fully verified
-  from userspace software alone; the tool is explicit about this and routes
-  those findings to "manual review" rather than asserting a false positive
-  or negative.
+- Meltdown/Spectre/MDS/L1TF and DMA checks read a real mitigation signal
+  (registry value or kernel status file) but can't always give a fully
+  definitive per-CPU verdict; where the signal is absent the tool says
+  "can't fully confirm" rather than asserting a false positive or negative.
+  Rowhammer and cold-boot attacks are not attempted at all, on any
+  platform — see "Deliberately not included" above.
 - Desktop notifications use `plyer` and fall back to console output if no
   display/notification backend is available (e.g. headless server).
 
@@ -414,11 +428,13 @@ attempt to detect**, because each requires fundamentally different tooling
 than a host-based Python monitor can provide — this is a scoping decision,
 not an oversight:
 
-- **Microarchitectural side channels beyond Meltdown/Spectre** — Foreshadow,
-  ZombieLoad, RIDL, Fallout, Retbleed, Downfall, Zenbleed, Inception/SRSO,
-  and RAMBleed (see the RG-001 note above). These require CPU
+- **Microarchitectural side channels beyond Meltdown/Spectre/MDS/L1TF** —
+  Retbleed, Downfall, Zenbleed, Inception/SRSO, and RAMBleed (a Rowhammer
+  variant, see "Deliberately not included" above). These require CPU
   performance-counter instrumentation or vendor microcode-level analysis,
-  not something observable from userspace process/OS state.
+  not something observable from userspace process/OS state — a materially
+  different, harder tooling problem than the registry/sysfs checks RG-001
+  through RG-003 use.
 - **Physical/electromagnetic attacks** — bus/interposer probing, chip-off
   extraction, TEMPEST-style EM emission analysis. These need physical
   sensors and lab equipment, not software.

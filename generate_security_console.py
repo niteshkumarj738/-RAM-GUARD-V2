@@ -187,7 +187,7 @@ def build_detector_health(catalogue, sig_findings):
             "name": "Known Vulnerability Catalogue",
             "status": "ACTIVE",
             "detail": f"{total_cat}/4 checks reporting &middot; {exposed} flagged for review "
-                      f"this run (Rowhammer, Meltdown/Spectre, cold-boot, DMA).",
+                      f"this run (Meltdown/Spectre, MDS, L1TF, DMA).",
         },
         {
             "name": "Crash-Signature Monitor",

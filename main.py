@@ -6,8 +6,9 @@ Entry point. Runs four complementary detection layers on a schedule:
   1. Live process memory monitor  -> catches leaks / abnormal usage /
                                       (best-effort) WX-page exploitation signs
   2. Known vulnerability catalogue -> reports host exposure to documented
-                                      RAM-class vulnerabilities (Rowhammer,
-                                      Meltdown/Spectre, cold-boot, DMA)
+                                      speculative-execution / RAM-disclosure
+                                      CPU vulnerabilities (Meltdown/Spectre,
+                                      MDS, L1TF) and DMA attacks
   3. Crash-signature monitor (Windows) -> catches application-level memory
                                       corruption (buffer overflow, use-after-
                                       free, double-free) at the moment it
@@ -68,9 +69,8 @@ def load_config(path: str = "config.yaml") -> dict:
 
 def load_catalogue_status(path: Path) -> dict:
     """Persists which vuln IDs were already exposed, across process
-    restarts and separate --once invocations, so a static/unchanging
-    exposure status (e.g. Rowhammer, which is always exposed=True by
-    design) doesn't re-notify every time the tool is run."""
+    restarts and separate --once invocations, so an unchanging exposure
+    status doesn't re-notify every time the tool is run."""
     if not path.exists():
         return {}
     try:
@@ -164,13 +164,12 @@ def run_crash_scan(monitor: CrashCorruptionMonitor, notifier: Notifier, logger, 
 
 def run_known_vuln_scan(logger, fleet: FleetReporter, last_status: dict = None):
     """Runs the catalogue check every cycle (so the log/dashboard always
-    reflect current status). Catalogue exposures are inherently "review
-    needed" (e.g. Rowhammer, which can never be software-verified and is
-    always exposed=True by design) rather than an active in-progress
-    threat, so this never pops a popup/mobile/email alert -- only critical
-    findings from the process/crash scans do that. Still logged every
-    cycle either way, and last_status is kept up to date for callers that
-    want to track exposure changes over time."""
+    reflect current status). Catalogue exposures are host configuration
+    facts, not an active in-progress threat, so this never pops a
+    popup/mobile/email alert -- only critical findings from the
+    process/crash scans do that. Still logged every cycle either way, and
+    last_status is kept up to date for callers that want to track exposure
+    changes over time."""
     if last_status is None:
         last_status = {}
     results = run_catalogue_scan()

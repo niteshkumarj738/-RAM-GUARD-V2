@@ -10,6 +10,16 @@ classes. This module does NOT contain exploit code. It provides:
 
 This is intentionally defensive: it tells the operator "your system may be
 exposed to X because mitigation Y is absent", not "here is how to trigger X".
+
+Scope, deliberately: every entry here has a REAL, software-checkable
+mitigation signal on at least one platform -- either a kernel-exposed status
+file (Linux) or a documented mitigation-override registry value (Windows).
+Rowhammer and cold-boot attacks are real, well-known RAM vulnerabilities but
+are NOT included here, on purpose: no operating system exposes DRAM
+refresh-timing or RAM-remanence data to any software, on any platform, so a
+"check" for them would always be a hardcoded guess rather than a real
+result. They're documented as explicitly out of scope in the README instead
+of being represented here as something this tool checks.
 """
 
 import platform
@@ -34,85 +44,77 @@ class CheckResult:
     detail: str
 
 
-def _check_rowhammer() -> CheckResult:
-    """Rowhammer: DRAM row disturbance leading to bit flips in adjacent rows.
-    No OS exposes a definitive 'am I vulnerable' flag for this — it depends on
-    DRAM refresh timing (TRR) and generation, which lives in firmware/DRAM
-    datasheets, not the OS. All platforms are honestly flagged for manual
-    firmware/BIOS review; the detail text just tells the operator where to look
-    per OS."""
-    system = platform.system()
-    base = ("Cannot be conclusively verified from software alone; depends on "
-            "DRAM refresh rate (TRR) and DDR generation.")
-    if system == "Linux":
-        return CheckResult(exposed=True, detail=f"{base} Check BIOS/UEFI DRAM timing settings "
-                                                  f"and consider tools like TRRespass for testing.")
-    elif system == "Windows":
-        return CheckResult(exposed=True, detail=f"{base} Check BIOS/UEFI DRAM timing settings; "
-                                                  f"Windows does not expose DRAM refresh info via any API.")
-    elif system == "Darwin":
-        return CheckResult(exposed=True, detail=f"{base} On Apple Silicon/T2 Macs, DRAM timing is "
-                                                  f"fixed by Apple; check the specific model's published specs.")
-    return CheckResult(exposed=True, detail=f"{base} Manual firmware/BIOS review required.")
+def _linux_sysfs_vuln_check(filename: str) -> CheckResult:
+    """Shared mechanism for every Linux speculative-execution check below:
+    the kernel exposes a plain-text mitigation verdict per vulnerability
+    under /sys/devices/system/cpu/vulnerabilities/. This is a real,
+    definitive, kernel-authored answer -- not a heuristic."""
+    try:
+        out = subprocess.run(
+            ["cat", f"/sys/devices/system/cpu/vulnerabilities/{filename}"],
+            capture_output=True, text=True, timeout=3,
+        )
+        text = out.stdout.strip().lower()
+        if "mitigation" in text or "not affected" in text:
+            return CheckResult(exposed=False, detail=text or "Not affected.")
+        elif text:
+            return CheckResult(exposed=True, detail=f"Kernel reports: {text}")
+        return CheckResult(exposed=True, detail="Vulnerability interface not readable; "
+                                                  "kernel may predate this reporting mechanism.")
+    except Exception as e:
+        return CheckResult(exposed=True, detail=f"Could not query kernel interface: {e}")
+
+
+def _windows_speculation_override_check(cve_label: str) -> CheckResult:
+    """Shared mechanism for every Windows speculative-execution check below:
+    Microsoft's FeatureSettingsOverride registry value (documented in
+    KB4072698 and related advisories) governs the OS-level mitigation
+    configuration for this entire vulnerability family (Meltdown, Spectre,
+    MDS, L1TF all share this same override mechanism). Its presence means
+    mitigation configuration has been explicitly set; its absence does NOT
+    necessarily mean unmitigated -- many systems rely on default
+    microcode/OS behaviour without ever setting an override. Microsoft's own
+    Get-SpeculationControlSettings PowerShell script is the only fully
+    definitive per-CVE verdict; this check is an honest proxy, not a
+    replacement for it."""
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management",
+        )
+        try:
+            value, _ = winreg.QueryValueEx(key, "FeatureSettingsOverride")
+            return CheckResult(
+                exposed=False,
+                detail=f"Mitigation override registry key present (value={value}); indicates "
+                       f"OS-level {cve_label} mitigations have been configured. For a "
+                       f"definitive per-CPU verdict, run Microsoft's "
+                       f"Get-SpeculationControlSettings PowerShell script.",
+            )
+        except FileNotFoundError:
+            return CheckResult(
+                exposed=True,
+                detail=f"No mitigation override registry value found. This does not "
+                       f"necessarily mean unmitigated against {cve_label} (many systems rely "
+                       f"on default microcode/OS behaviour) — run Microsoft's "
+                       f"Get-SpeculationControlSettings script for a definitive check.",
+            )
+    except Exception as e:
+        return CheckResult(
+            exposed=True,
+            detail=f"Could not read Windows registry ({e}); run Microsoft's "
+                   f"Get-SpeculationControlSettings PowerShell script for a definitive check.",
+        )
 
 
 def _check_meltdown_spectre() -> CheckResult:
-    """Meltdown/Spectre: speculative-execution side channels that can leak RAM contents.
-    Uses the real mitigation-status interface available on each OS rather than
-    guessing; falls back to an honest 'manual check needed' only where the OS
-    genuinely doesn't expose this."""
+    """Meltdown/Spectre: speculative-execution side channels that can leak RAM contents."""
     system = platform.system()
-
     if system == "Linux":
-        try:
-            out = subprocess.run(
-                ["cat", "/sys/devices/system/cpu/vulnerabilities/meltdown"],
-                capture_output=True, text=True, timeout=3,
-            )
-            text = out.stdout.strip().lower()
-            if "mitigation" in text:
-                return CheckResult(exposed=False, detail=f"Mitigated: {text}")
-            elif "not affected" in text:
-                return CheckResult(exposed=False, detail=text)
-            elif text:
-                return CheckResult(exposed=True, detail=f"Kernel reports: {text}")
-            else:
-                return CheckResult(exposed=True, detail="Vulnerability interface not readable; "
-                                                          "kernel may predate this reporting mechanism.")
-        except Exception as e:
-            return CheckResult(exposed=True, detail=f"Could not query kernel interface: {e}")
-
+        return _linux_sysfs_vuln_check("meltdown")
     elif system == "Windows":
-        try:
-            import winreg
-            key = winreg.OpenKey(
-                winreg.HKEY_LOCAL_MACHINE,
-                r"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management",
-            )
-            try:
-                value, _ = winreg.QueryValueEx(key, "FeatureSettingsOverride")
-                return CheckResult(
-                    exposed=False,
-                    detail=f"Mitigation override registry key present (value={value}); "
-                           f"indicates OS-level Meltdown/Spectre mitigations have been configured. "
-                           f"For a definitive per-CPU verdict, run Microsoft's "
-                           f"Get-SpeculationControlSettings PowerShell script.",
-                )
-            except FileNotFoundError:
-                return CheckResult(
-                    exposed=True,
-                    detail="No mitigation override registry value found. This does not "
-                           "necessarily mean unmitigated (many systems rely on default "
-                           "microcode/OS behaviour) — run Microsoft's "
-                           "Get-SpeculationControlSettings script for a definitive check.",
-                )
-        except Exception as e:
-            return CheckResult(
-                exposed=True,
-                detail=f"Could not read Windows registry ({e}); run Microsoft's "
-                       f"Get-SpeculationControlSettings PowerShell script for a definitive check.",
-            )
-
+        return _windows_speculation_override_check("Meltdown/Spectre")
     elif system == "Darwin":
         return CheckResult(
             exposed=True,
@@ -121,18 +123,48 @@ def _check_meltdown_spectre() -> CheckResult:
                    "regular Software Update; verify the OS is fully up to date and check "
                    "Apple's security advisories for this specific CPU/T2/Apple Silicon model.",
         )
-
     return CheckResult(exposed=True, detail=f"Unsupported OS '{system}': manual review required.")
 
 
-def _check_cold_boot() -> CheckResult:
-    """Cold-boot attack: RAM remanence allows key/data recovery after power-off."""
-    return CheckResult(
-        exposed=True,
-        detail="Software cannot detect this directly. Mitigation depends on "
-               "full-disk encryption + memory scrambling/TRESOR-style key handling. "
-               "Flagged for manual policy check.",
-    )
+def _check_mds() -> CheckResult:
+    """MDS (Microarchitectural Data Sampling) -- the ZombieLoad / RIDL / Fallout
+    family (CVE-2018-12126, CVE-2018-12127, CVE-2018-12130, CVE-2019-11091).
+    Leaks data across the CPU's internal buffers (store, fill, load ports)
+    rather than through cache timing like Meltdown/Spectre -- a related but
+    distinct 2019 disclosure, same speculative-execution root cause class."""
+    system = platform.system()
+    if system == "Linux":
+        return _linux_sysfs_vuln_check("mds")
+    elif system == "Windows":
+        return _windows_speculation_override_check("MDS (ZombieLoad/RIDL/Fallout)")
+    elif system == "Darwin":
+        return CheckResult(
+            exposed=True,
+            detail="macOS does not expose per-vulnerability mitigation flags through a "
+                   "standard userspace API. Verify the OS is fully up to date and check "
+                   "Apple's security advisories for this CPU model.",
+        )
+    return CheckResult(exposed=True, detail=f"Unsupported OS '{system}': manual review required.")
+
+
+def _check_l1tf() -> CheckResult:
+    """L1TF / Foreshadow (CVE-2018-3615, CVE-2018-3620, CVE-2018-3646): a
+    speculative-execution flaw that can read L1 cache contents across
+    security boundaries, including from SGX enclaves and across VM
+    hypervisor boundaries -- distinct from, but related to, Meltdown/Spectre."""
+    system = platform.system()
+    if system == "Linux":
+        return _linux_sysfs_vuln_check("l1tf")
+    elif system == "Windows":
+        return _windows_speculation_override_check("L1TF/Foreshadow")
+    elif system == "Darwin":
+        return CheckResult(
+            exposed=True,
+            detail="macOS does not expose per-vulnerability mitigation flags through a "
+                   "standard userspace API. Verify the OS is fully up to date and check "
+                   "Apple's security advisories for this CPU model.",
+        )
+    return CheckResult(exposed=True, detail=f"Unsupported OS '{system}': manual review required.")
 
 
 def _check_dma_attack() -> CheckResult:
@@ -181,16 +213,6 @@ def _check_dma_attack() -> CheckResult:
 CATALOGUE = [
     VulnerabilityClass(
         vuln_id="RG-001",
-        name="Rowhammer",
-        category="Hardware / DRAM",
-        description="Repeated rapid access to a DRAM row can induce bit flips in "
-                     "physically adjacent rows, potentially corrupting data or "
-                     "escalating privileges.",
-        reference="CVE-2015-0565 class; Kim et al. 2014",
-        check=_check_rowhammer,
-    ),
-    VulnerabilityClass(
-        vuln_id="RG-002",
         name="Meltdown / Spectre",
         category="Speculative Execution / RAM disclosure",
         description="Speculative execution side channels allow reading privileged "
@@ -199,14 +221,24 @@ CATALOGUE = [
         check=_check_meltdown_spectre,
     ),
     VulnerabilityClass(
+        vuln_id="RG-002",
+        name="MDS (ZombieLoad / RIDL / Fallout)",
+        category="Speculative Execution / RAM disclosure",
+        description="Microarchitectural Data Sampling: leaks data from the CPU's "
+                     "internal store/fill/load buffers across security boundaries, "
+                     "via speculative execution.",
+        reference="CVE-2018-12126, CVE-2018-12127, CVE-2018-12130, CVE-2019-11091",
+        check=_check_mds,
+    ),
+    VulnerabilityClass(
         vuln_id="RG-003",
-        name="Cold Boot Attack",
-        category="Physical / RAM remanence",
-        description="Data persists briefly in RAM after power loss, allowing "
-                     "extraction of encryption keys or sensitive data via a "
-                     "quick reboot or chip transplant.",
-        reference="Halderman et al. 2008",
-        check=_check_cold_boot,
+        name="L1TF / Foreshadow",
+        category="Speculative Execution / RAM disclosure",
+        description="L1 Terminal Fault: speculative execution can read L1 cache "
+                     "contents across security boundaries, including SGX enclaves "
+                     "and virtual-machine hypervisor isolation.",
+        reference="CVE-2018-3615, CVE-2018-3620, CVE-2018-3646",
+        check=_check_l1tf,
     ),
     VulnerabilityClass(
         vuln_id="RG-004",

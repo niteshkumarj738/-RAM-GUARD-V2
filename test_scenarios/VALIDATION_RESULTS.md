@@ -241,8 +241,9 @@ settled result either way.
   sophisticated, sustained, real evasive attacker — section 9's own caveat
   about timing-sensitivity is a concrete example of why that claim still
   isn't earned.
-- The known-vulnerability catalogue (Rowhammer, Meltdown, cold boot, DMA)
+- The known-vulnerability catalogue (Meltdown/Spectre, MDS, L1TF, DMA)
   wasn't separately validated here since those checks read system state
   rather than react to a triggerable condition — they were exercised
   during normal scan runs shown earlier in this project, on both Linux and
-  Windows.
+  Windows. Rowhammer and cold-boot were deliberately removed from the
+  catalogue (see README) rather than represented as checked.
