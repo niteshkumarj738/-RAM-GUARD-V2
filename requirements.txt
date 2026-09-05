@@ -3,4 +3,6 @@ plyer>=2.1.0
 windows-toasts>=1.3.0; sys_platform == "win32"
 PyYAML>=6.0
 streamlit>=1.30.0
-requests>=2.31.0
+requests>=2.32.2
+urllib3>=1.26.19 # not directly required, pinned by Snyk to avoid a vulnerability
+idna>=3.15 # not directly required, pinned by Snyk to avoid a vulnerability
