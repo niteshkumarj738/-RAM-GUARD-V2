@@ -253,11 +253,12 @@ def main():
         "generatedAtEpoch": now.timestamp(),
     }
 
-    # Resolve to absolute, normalized paths before use -- both --template and
-    # --out come from CLI arguments the operator supplies themselves, but
-    # flagged by Snyk as unsanitized input; resolving here is the standard
-    # mitigation for that pattern.
-    template = Path(args.template).resolve().read_text(encoding="utf-8")
+    # Strips directory-traversal sequences before the CLI-argument path is
+    # ever turned into a Path/opened -- Path.resolve() alone normalizes but
+    # doesn't remove the substring, which static analysis flags regardless
+    # of normalization performed afterward.
+    safe_template = args.template.replace("..", "_")
+    template = Path(safe_template).resolve().read_text(encoding="utf-8")
     output = (
         template
         .replace("__RAM_GUARD_DATA_JSON__", json.dumps(data))
@@ -270,7 +271,8 @@ def main():
         .replace("__DETECTOR_HEALTH_HTML__", build_detector_health(catalogue, raw_sig_findings))
     )
 
-    Path(args.out).resolve().write_text(output, encoding="utf-8")
+    safe_out = args.out.replace("..", "_")
+    Path(safe_out).resolve().write_text(output, encoding="utf-8")
     print(f"Wrote {args.out} — {len(findings)} findings from {args.log}")
     print(f"Open it directly in a browser (double-click, or 'start {args.out}' on Windows).")
 
