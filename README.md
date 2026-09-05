@@ -107,6 +107,8 @@ detector/
                             installed software / host config — always notifies on a match
 notifier.py         Cross-platform desktop popup + instant mobile push via ntfy.sh (with cooldown)
 dashboard.py         Streamlit dashboard for live visualization
+run_dashboard_secure.py  Launches the dashboard with hardened HTTP security headers
+                            (recommended over `streamlit run dashboard.py` directly)
 generate_security_console.py  Standalone printable HTML security report, built from real log data
 export_findings.py   Exports all findings (all four layers) from the log to CSV/JSON
 log_integrity.py      SHA-256 hash-chains the log so tampering after the fact is detectable
@@ -140,8 +142,10 @@ python main.py --silent
 
 **Dashboard view:**
 ```bash
-streamlit run dashboard.py
+python run_dashboard_secure.py
 ```
+(Or `streamlit run dashboard.py` directly, without the hardened security
+headers — see "Web security scan" below for why the wrapper exists.)
 
 **Export all findings to CSV/JSON** (for a spreadsheet or an external
 trend-analysis tool):
@@ -367,6 +371,26 @@ per-device credentials. Fine for a local/trusted-network demo. A
 production version behind a real network would need at minimum HTTPS,
 per-device auth tokens instead of one shared key, and a real datastore
 instead of a flat file.
+
+## Web security scan (dashboard)
+
+The dashboard is the one part of RAM-Guard that runs as an actual web
+server, so it's the one part an OWASP ZAP scan applies to (ZAP tests
+running web servers, not plain Python scripts — it has nothing to say
+about `main.py` or the detectors). `run_dashboard_secure.py` wraps the
+dashboard's Starlette app with hardened HTTP security headers (CSP,
+X-Frame-Options, X-Content-Type-Options, Permissions-Policy,
+Cross-Origin-Resource/Embedder/Opener-Policy), verified end-to-end with a
+real headless-browser check (page renders, zero JS errors, buttons still
+work) before and after each change.
+
+Result of a full ZAP baseline scan: 63 checks pass, 0 failures, 4 informational/
+structural items remain that aren't fixable from outside Streamlit's own
+internals — an informational cache-policy alert about *sensitive* content
+that doesn't apply to public static assets, `style-src unsafe-inline`
+required by Streamlit's CSS-in-JS styling engine, a timestamp string
+inside a third-party bundled file, and an informational "modern web app"
+classification tag. None of the four are RAM-Guard's own code.
 
 ## OS support
 
