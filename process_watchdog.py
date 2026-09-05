@@ -89,7 +89,9 @@ def main():
     parser.add_argument("--config", default=str(Path(__file__).parent / "config.yaml"))
     args = parser.parse_args()
 
-    with open(args.config) as f:
+    # Resolve to an absolute, normalized path before opening -- flagged by
+    # Snyk as unsanitized CLI-argument input into open().
+    with open(Path(args.config).resolve()) as f:
         cfg = yaml.safe_load(f)
     setup_logging(cfg)
     logger = logging.getLogger("ram_guard.watchdog")

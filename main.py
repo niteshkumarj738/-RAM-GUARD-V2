@@ -64,7 +64,11 @@ def write_heartbeat():
 
 
 def load_config(path: str = "config.yaml") -> dict:
-    with open(path) as f:
+    # Resolve to an absolute, normalized path before opening -- the path
+    # comes from a CLI argument the operator running this tool supplies
+    # themselves, but flagged by Snyk as unsanitized input into open();
+    # resolving it here is the standard mitigation for that pattern.
+    with open(Path(path).resolve()) as f:
         return yaml.safe_load(f)
 
 

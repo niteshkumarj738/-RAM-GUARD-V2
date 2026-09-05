@@ -96,7 +96,10 @@ def main():
     parser.add_argument("--hashes", default=str(Path(__file__).parent / "ram_guard.log.hashes"))
     args = parser.parse_args()
 
-    ok, message = verify(Path(args.log), Path(args.hashes))
+    # Resolve to absolute, normalized paths before use -- both come from CLI
+    # arguments the operator supplies themselves, but flagged by Snyk as
+    # unsanitized input; resolving here is the standard mitigation.
+    ok, message = verify(Path(args.log).resolve(), Path(args.hashes).resolve())
     print(message)
     if ok is False:
         sys.exit(1)
